@@ -43,11 +43,43 @@ class ClientGUI:
         user_frame.pack(pady=5, fill=tk.X)
 
         # [KHUNG SUDOKU 9x9 SẼ Ở ĐÂY]
-        # (Đây là phần phức tạp nhất, bạn cần tự implement logic 
-        #  dùng Canvas hoặc Frame/Entry)
-        self.game_frame = tk.Frame(self.window, relief="sunken", borderwidth=2, height=300, width=300)
-        tk.Label(self.game_frame, text="Sudoku Grid 9x9").pack()
+        self.game_frame = tk.Frame(self.window, relief="sunken", borderwidth=2)
         self.game_frame.pack(pady=10)
+
+        # Tạo một mảng 2D (list 9x9) để lưu 81 ô Entry
+        self.cells = [[None for _ in range(9)] for _ in range(9)]
+        
+        # Map này sẽ ánh xạ tên nội bộ của widget (%W) sang (r, c)
+        self.cell_name_to_coord = {}
+
+        # Hàm validation_cmd sẽ được gọi BẤT CỨ KHI NÀO người dùng gõ
+        vcmd = (self.window.register(self.validate_entry), '%P', '%W')
+
+        for r in range(9):
+            for c in range(9):
+                # Xác định màu nền cho các ô 3x3
+                bg = "#DDDDDD" if (r // 3 + c // 3) % 2 == 0 else "#FFFFFF"
+                
+                cell_entry = tk.Entry(
+                    self.game_frame, 
+                    width=2, 
+                    font=('Arial', 24, 'bold'), 
+                    justify='center',
+                    bg=bg,
+                    state=tk.DISABLED, # Bắt đầu ở trạng thái vô hiệu hóa
+                    validate="key", # Kích hoạt validation
+                    validatecommand=vcmd
+                )
+                
+                # Gán ID (widget name) để hàm validate_entry biết ô nào được nhấn
+                # cell_entry.configure(name=f"cell_{r}_{c}")
+                
+                cell_entry.grid(row=r, column=c, ipady=5)
+                self.cells[r][c] = cell_entry
+
+                # Lấy tên Tcl nội bộ (chính là giá trị %W)
+                # và lưu nó vào map cùng với tọa độ (r, c)
+                self.cell_name_to_coord[str(cell_entry)] = (r, c)
 
         # [KHUNG CHAT VÀ TIMER]
         self.chat_area = scrolledtext.ScrolledText(self.window, height=8, state=tk.DISABLED)
@@ -62,6 +94,91 @@ class ClientGUI:
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
         self.window.mainloop()
+
+    # Hàm này được gọi mỗi khi người dùng gõ vào ô
+    def validate_entry(self, new_value, widget_name):
+        # new_value là giá trị mới (%P)
+        # widget_name là tên Tcl nội bộ của widget (%W)
+        
+        # Chỉ cho phép gõ 1 số (1-9) hoặc xóa (value rỗng)
+        if not (new_value == "" or (len(new_value) == 1 and new_value.isdigit() and new_value != '0')):
+            return False # Ngăn không cho gõ phím đó
+            
+        try:
+            # ✅ DÙNG MAP ĐỂ TRA CỨU TỌA ĐỘ (r, c)
+            r, c = self.cell_name_to_coord[widget_name]
+            
+        except KeyError:
+            # Lỗi này không nên xảy ra
+            self.show_chat(f"Lỗi: Không tìm thấy widget {widget_name}")
+            return False 
+
+        if new_value == "":
+            # Người dùng đã xóa số
+            # [Optional: Gửi thông báo "xóa ô" lên server]
+            return True
+            
+        # Người dùng đã nhập 1 số
+        value = int(new_value)
+
+        # Gửi nước đi lên server
+        if self.current_game_id:
+            move_msg = {
+                "action": "move",
+                "game_id": self.current_game_id,
+                "cell": [r, c],
+                "value": value
+            }
+            self.send_message(move_msg)
+            
+            # Đổi màu số của mình (ví dụ: màu xám)
+            self.cells[r][c].config(fg="#555555")
+        
+        return True # Chấp nhận phím gõ
+
+    # Hàm điền đề bài lên bàn cờ
+    def display_puzzle(self, puzzle_data):
+        # self.game_frame.config(state=tk.NORMAL) # Mở khóa frame
+        
+        for r in range(9):
+            for c in range(9):
+                widget = self.cells[r][c]
+                widget.config(state=tk.NORMAL) # Mở khóa ô
+                widget.delete(0, tk.END)
+                
+                num = puzzle_data[r][c]
+                
+                if num is not None:
+                    # Đây là ô đề bài
+                    widget.insert(0, str(num))
+                    widget.config(
+                        state="readonly", # Không cho sửa
+                        fg="blue",        # Màu xanh cho dễ phân biệt
+                        readonlybackground=widget.cget('bg') # Giữ màu nền
+                    )
+                else:
+                    # Đây là ô trống
+                    widget.config(state=tk.NORMAL, fg="black") # Cho phép nhập
+
+    # Hàm cập nhật nước đi của đối thủ
+    def update_cell(self, cell, value):
+        try:
+            r, c = cell
+            widget = self.cells[r][c]
+            
+            # Cập nhật giá trị
+            widget.config(state=tk.NORMAL) # Mở khóa tạm thời
+            widget.delete(0, tk.END)
+            widget.insert(0, str(value))
+            
+            # Đặt thành "chỉ đọc" và tô màu đỏ
+            widget.config(
+                state="readonly",
+                fg="red", # Nước đi của đối thủ
+                readonlybackground=widget.cget('bg')
+            )
+        except Exception as e:
+            self.show_chat(f"Error updating opponent move: {e}")
 
     def connect_to_server(self):
         self.username = simpledialog.askstring("Username", "Enter your username:")
@@ -153,22 +270,26 @@ class ClientGUI:
         elif action == "game_start":
             self.current_game_id = message.get("game_id")
             self.opponent = message.get("opponent")
-            puzzle = message.get("puzzle")
+            puzzle = message.get("puzzle") # 'puzzle' là ma trận 9x9
+            
             self.show_chat(f"Game started with {self.opponent} (ID: {self.current_game_id})")
-            # [LOGIC: Vẽ bàn cờ Sudoku (puzzle) lên game_frame]
-
-        elif action == "opponent_move":
-            cell = message.get("cell")
-            value = message.get("value")
-            # [LOGIC: Cập nhật nước đi của đối thủ lên bàn cờ]
-            self.show_chat(f"Opponent played {value} at {cell}")
+            
+            # [LOGIC 1: Vẽ bàn cờ]
+            self.display_puzzle(puzzle) # Gọi hàm đã tạo
 
         elif action == "chat_message":
             self.show_chat(f"[{message.get('from')}]: {message.get('message')}")
         
         elif action == "timer_update":
-            # [LOGIC: Cập nhật self.timer_label]
-            pass
+            # [LOGIC 3: Cập nhật timer]
+            my_time = message.get("my_time", 0)
+            op_time = message.get("opponent_time", 0)
+            
+            # Định dạng lại thời gian (giây) thành (phút:giây)
+            my_time_str = f"{my_time // 60}:{my_time % 60:02d}"
+            op_time_str = f"{op_time // 60}:{op_time % 60:02d}"
+            
+            self.timer_label.config(text=f"My Time: {my_time_str} | Opponent: {op_time_str}")
 
         elif action == "game_over":
             winner = message.get("winner")
@@ -176,6 +297,26 @@ class ClientGUI:
             self.current_game_id = None
             self.opponent = None
             
+            # Vô hiệu hóa bàn cờ khi game kết thúc
+            for r in range(9):
+                for c in range(9):
+                    self.cells[r][c].config(state=tk.DISABLED)
+        
+        elif action == "game_finish":
+            # Server báo RẰNG MÌNH đã hoàn thành
+            time_remaining = message.get("time")
+            messagebox.showinfo("Finished!", f"Bạn đã hoàn thành! (Thời gian còn lại: {time_remaining}s)")
+            # Vô hiệu hóa bàn cờ
+            for r in range(9):
+                for c in range(9):
+                    self.cells[r][c].config(state=tk.DISABLED)
+
+        elif action == "opponent_finished":
+            # Server báo ĐỐI THỦ đã hoàn thành
+            name = message.get("name")
+            self.show_chat(f"THÔNG BÁO: {name} đã hoàn thành!")
+
+
     def challenge_player(self):
         selected_indices = self.user_listbox.curselection()
         if not selected_indices:

@@ -7,7 +7,7 @@ import queue
 import tkinter as tk
 from tkinter import scrolledtext
 from pymongo import MongoClient # Cần 'pip install pymongo'
-from sudoku import Sudoku # cần pip install sudoku
+from sudoku import Sudoku # cần pip install py-sudoku
 
 # Đặt lớp này sau phần import, BÊN NGOÀI lớp ServerGUI
 # Đảm bảo bạn có 'import time' ở đầu file
@@ -25,7 +25,10 @@ class GameSession(threading.Thread):
             "time": total_time, 
             "board": [row[:] for row in puzzle_board], # Board CỦA RIÊNG P1
             "finished": False,
-            "finish_time_remaining": 0 # Thời gian còn lại khi hoàn thành
+            "finish_time_remaining": 0,# Thời gian còn lại khi hoàn thành
+            "submission_board": None, 
+            "incorrect_cells": 99, 
+            "error_list": [] 
         }
         self.player2 = {
             "name": p2_name, 
@@ -33,7 +36,10 @@ class GameSession(threading.Thread):
             "time": total_time, 
             "board": [row[:] for row in puzzle_board], # Board CỦA RIÊNG P2
             "finished": False,
-            "finish_time_remaining": 0
+            "finish_time_remaining": 0,
+            "submission_board": None, 
+            "incorrect_cells": 99,
+            "error_list": []   
         }
         
         # Đề bài gốc, không thay đổi
@@ -45,6 +51,11 @@ class GameSession(threading.Thread):
 
     def log(self, message):
         self.server.log(message)
+
+    def stop(self):
+        """Báo cho luồng (thread) này dừng lại"""
+        self.running = False
+        self.log(f"Stopping GameSession {self.game_id}")
 
     # Vòng lặp chính của timer
     def run(self):
@@ -70,18 +81,46 @@ class GameSession(threading.Thread):
                 if not self.player1["finished"] and self.player1["time"] <= 0:
                     self.player1["finished"] = True # Hết giờ = tính là xong (thua)
                     self.log(f"Game {self.game_id}: {self.player1['name']} timed out.")
+                    self.handle_submission(self.player1["name"])
                     self.server.send_to_client(self.player2["conn"], {"action": "opponent_finished", "name": self.player1['name']})
 
                 # Kiểm tra P2 hết giờ
                 if not self.player2["finished"] and self.player2["time"] <= 0:
                     self.player2["finished"] = True # Hết giờ = tính là xong (thua)
                     self.log(f"Game {self.game_id}: {self.player2['name']} timed out.")
+                    self.handle_submission(self.player2["name"])
                     self.server.send_to_client(self.player1["conn"], {"action": "opponent_finished", "name": self.player2['name']})
 
-                # Nếu cả 2 đều đã xong (hoặc hết giờ) -> kết thúc game
-                if self.player1["finished"] and self.player2["finished"]:
+
+    def handle_submission(self, player_name):
+        with self.lock:
+            if player_name == self.player1["name"]:
+                player = self.player1
+                opponent = self.player2
+            else:
+                player = self.player2
+                opponent = self.player1
+            
+            if player["finished"]: # Đã nộp rồi, không nộp lại
+                return
+
+            player["finished"] = True
+            player["finish_time_remaining"] = player["time"]
+            # ✅ LƯU LẠI BÀI NỘP
+            player["submission_board"] = [row[:] for row in player["board"]] 
+
+            self.log(f"Game {self.game_id}: {player_name} has submitted.")
+            
+            # Gửi thông báo cho chính người chơi
+            self.server.send_to_client(player["conn"], {"action": "game_finish", "status": "submitted", "time": player["time"]})
+            # Gửi thông báo cho đối thủ
+            self.server.send_to_client(opponent["conn"], {"action": "opponent_finished", "name": player["name"]})
+
+            # Nếu cả 2 đều đã nộp (hoặc hết giờ) -> Chấm điểm
+            if self.player1["finished"] and self.player2["finished"]:
+                if self.running: # Đảm bảo chỉ gọi 1 lần
                     self.running = False
-                    self.determine_winner()
+                    self.score_and_end_game()
 
     def broadcast_timer(self):
         # Tin nhắn cho P1
@@ -92,21 +131,69 @@ class GameSession(threading.Thread):
         msg2 = {"action": "timer_update", "my_time": self.player2["time"], "opponent_time": self.player1["time"]}
         self.server.send_to_client(self.player2["conn"], msg2)
 
-    def determine_winner(self):
-        winner = "Draw" # Mặc định là hòa
+    def calculate_errors(self, submission_board):
+        """Đếm số ô sai (hoặc trống) so với lời giải"""
+        if submission_board is None: # Hết giờ mà chưa nộp
+            return 99 # Phạt
+            
+        error_list = []
+        for r in range(9):
+            for c in range(9):
+                # Nếu ô đó là ô trống mà client điền
+                if self.puzzle_board[r][c] is None:
+                    # So sánh với lời giải
+                    if submission_board[r][c] != self.solution[r][c]:
+                        error_list.append([r, c]) # THÊM TỌA ĐỘ VÀO LIST
+        return error_list
+
+    def score_and_end_game(self):
+        """Chấm điểm và quyết định người thắng"""
+        # LẤY VỀ DANH SÁCH LỖI
+        p1_error_list = self.calculate_errors(self.player1["submission_board"])
+        p2_error_list = self.calculate_errors(self.player2["submission_board"])
         
-        p1_time = self.player1["finish_time_remaining"]
-        p2_time = self.player2["finish_time_remaining"]
+        # LẤY SỐ LƯỢNG LỖI TỪ LIST
+        p1_errors = len(p1_error_list)
+        p2_errors = len(p2_error_list)
 
-        if p1_time > p2_time:
+        # LƯU LẠI CẢ HAI
+        self.player1["incorrect_cells"] = p1_errors
+        self.player2["incorrect_cells"] = p2_errors
+        self.player1["error_list"] = p1_error_list
+        self.player2["error_list"] = p2_error_list
+
+        self.log(f"Game {self.game_id} scoring. P1 Errors: {p1_errors} | P2 Errors: {p2_errors}")
+
+        winner = "Draw" # Mặc định
+
+        # Tiêu chí 1: Ai ít lỗi hơn
+        if p1_errors < p2_errors:
             winner = self.player1["name"]
-        elif p2_time > p1_time:
+        elif p2_errors < p1_errors:
             winner = self.player2["name"]
-        elif p1_time == 0 and p2_time == 0:
-             winner = "Draw (Timeout)"
+        else:
+            # Tiêu chí 2 (Nếu bằng lỗi): Xét thời gian
+            # (Thời gian còn lại nhiều hơn = nộp nhanh hơn)
+            p1_time = self.player1["finish_time_remaining"]
+            p2_time = self.player2["finish_time_remaining"]
+            
+            # Nếu cả 2 cùng 0 lỗi và nộp cùng lúc (cực hiếm)
+            if p1_time == p2_time and p1_errors == p2_errors:
+                winner = "Draw"
+            elif p1_time > p2_time: # P1 còn nhiều thời gian hơn -> thắng
+                winner = self.player1["name"]
+            elif p2_time > p1_time: # P2 còn nhiều thời gian hơn -> thắng
+                winner = self.player2["name"]
+            else: # Bằng thời gian
+                winner = "Draw"
+                
+        # Xử lý trường hợp cả 2 cùng hết giờ và không giải được
+        if self.player1["time"] <= 0 and self.player2["time"] <= 0 and p1_errors > 0 and p2_errors > 0:
+             if p1_errors == p2_errors:
+                winner = "Draw (Timeout)"
 
-        self.log(f"Game {self.game_id} finished. P1 Time: {p1_time}, P2 Time: {p2_time}. Winner: {winner}")
-        self.server.end_game(self.game_id, winner)
+        self.log(f"Game {self.game_id} finished. Winner: {winner}")
+        self.server.end_game(self.game_id, winner) # Gọi hàm của ServerGUI để đóng game
 
     # Xử lý khi có client gửi nước đi
     def handle_move(self, player_name, move_data):
@@ -150,30 +237,6 @@ class GameSession(threading.Thread):
 
             # CHÚNG TA KHÔNG CHUYỂN TIẾP NƯỚC ĐI CHO ĐỐI THỦ
             # (self.server.send_to_client(opponent_conn, fwd_msg) -> BỊ XÓA)
-
-            # Kiểm tra thắng
-            if self.is_board_full(player["board"]):
-                if player["board"] == self.solution:
-                    # THẮNG
-                    player["finished"] = True
-                    player["finish_time_remaining"] = player["time"] # Lưu lại thời gian còn lại
-                    self.log(f"Game {self.game_id}: {player_name} has solved the puzzle!")
-                    
-                    # Gửi thông báo cho chính người chơi
-                    self.server.send_to_client(player["conn"], {"action": "game_finish", "status": "completed", "time": player["time"]})
-                    # Gửi thông báo cho đối thủ
-                    self.server.send_to_client(opponent["conn"], {"action": "opponent_finished", "name": player["name"]})
-
-                else:
-                    # Bàn cờ đầy nhưng sai -> Gửi lỗi (Tùy chọn)
-                    self.log(f"Game {self.game_id}: {player_name} filled board incorrectly.")
-                    # (Gửi tin nhắn {"action": "error", "message": "Board incorrect"})
-
-            # Kiểm tra xem cả 2 đã xong chưa (để kết thúc game sớm)
-            if self.player1["finished"] and self.player2["finished"]:
-                if self.running: # Đảm bảo chỉ gọi 1 lần
-                    self.running = False
-                    self.determine_winner()
 
     # (Các hàm is_valid_move và is_board_full giữ nguyên như cũ)
     # Hàm helper kiểm tra xem nước đi có hợp lệ không
@@ -409,6 +472,21 @@ class ServerGUI:
                     else:
                         self.log(f"Received move for non-existent game {game_id}")
 
+                elif action == "submit_solution":
+                    game_id = message.get("game_id") # Client không cần gửi game_id
+                    
+                    # Tìm game_id dựa trên username
+                    found_game = None
+                    for gid, game in self.active_games.items():
+                        if game.player1["name"] == username or game.player2["name"] == username:
+                            found_game = game
+                            break
+                    
+                    if found_game:
+                        found_game.handle_submission(username)
+                    else:
+                        self.log(f"Received submission from {username} for non-existent game.")
+
                 elif action == "chat":
                     game_id = message.get("game_id")
                     game = self.active_games.get(game_id)
@@ -462,10 +540,21 @@ class ServerGUI:
             # Lưu vào DB
             self.save_match_to_db(game_data)
             
-            # Thông báo cho 2 người chơi là game đã kết thúc
-            msg = {"action": "game_over", "winner": winner}
-            self.send_to_client(game.player1["conn"], msg)
-            self.send_to_client(game.player2["conn"], msg)
+            # Tin nhắn cho Player 1 (gửi kèm danh sách lỗi CỦA P1)
+            msg1 = {
+                "action": "game_over", 
+                "winner": winner,
+                "errors": game.player1.get("error_list", []) # Lấy ds lỗi
+            }
+            
+            # Tin nhắn cho Player 2 (gửi kèm danh sách lỗi CỦA P2)
+            msg2 = {
+                "action": "game_over", 
+                "winner": winner,
+                "errors": game.player2.get("error_list", []) # Lấy ds lỗi
+            }
+            self.send_to_client(game.player1["conn"], msg1)
+            self.send_to_client(game.player2["conn"], msg2)
 
     def send_to_client(self, conn, message):
         try:

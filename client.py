@@ -70,9 +70,34 @@ class SudokuUI:
                                     font=("Arial", 12), bg="#f4ede4", fg="#5a3825")
         self.timer_label.pack()
 
+    def check_board_full(self):
+        """Kiểm tra xem tất cả ô có thể điền đã được điền chưa"""
+        for r in range(9):
+            for c in range(9):
+                cell = self.cells[r][c]
+                # Nếu ô đó không phải là 'readonly' (ô đề bài) 
+                # và nó đang trống
+                if cell.cget('state') != 'readonly' and not cell.get():
+                    return False # Vẫn còn ô trống
+        return True # Đã đầy
+
+    def delayed_check_full(self):
+        """
+        Kiểm tra sau 1ms để đảm bảo tkinter đã cập nhật giá trị.
+        Hàm này sẽ Bật hoặc Tắt nút 'Hoàn thành'
+        """
+        if self.check_board_full():
+            self.client.btn_submit.config(state=tk.NORMAL)
+        else:
+            self.client.btn_submit.config(state=tk.DISABLED)
+
     # ------------------- Sudoku logic -------------------
     def validate_entry(self, value, widget_name):
         """Chỉ cho phép nhập số 1-9"""
+        # Lên lịch kiểm tra, bất kể phím gõ là gì
+        # 'after(1)' đảm bảo nó chạy SAU KHI tkinter đã cập nhật ô
+        self.window.after(1, self.delayed_check_full)
+
         if not (value == "" or (len(value) == 1 and value in "123456789")):
             return False
 
@@ -85,10 +110,15 @@ class SudokuUI:
             return False
 
         if value == "":
+            # Người dùng đang xóa số
+            # [Tùy chọn: Gửi nước đi là None/0 để cập nhật]
+            # self.client.send_move(r, c, None) 
             return True
-
+        
+        # Người dùng đang thêm số
         self.client.send_move(r, c, int(value))
         self.cells[r][c].config(fg="#555555")
+
         return True
 
     def display_puzzle(self, puzzle):
@@ -122,6 +152,27 @@ class SudokuUI:
             for c in range(9):
                 self.cells[r][c].config(state=tk.DISABLED)
 
+    def highlight_errors(self, error_list):
+        """Nhận 1 list tọa độ [[r, c], ...] và tô màu các ô đó"""
+        error_color = "#FC665C" # Đây là màu rgb(252, 102, 92)
+        
+        self.log(f"Highlighting {len(error_list)} errors.") # Tùy chọn: log
+        
+        for coord in error_list:
+            try:
+                r, c = coord
+                cell_widget = self.cells[r][c]
+                
+                # Chúng ta tô màu nền (bg) của ô đó
+                cell_widget.config(bg=error_color)
+            except Exception as e:
+                self.log(f"Error highlighting cell {coord}: {e}") # Tùy chọn: log
+
+    def log(self, message):
+        """Hàm helper để log (gọi hàm add_chat_message)"""
+        # Bạn có thể dùng hàm này nếu muốn, hoặc gọi thẳng self.client.ui.add_chat_message
+        self.add_chat_message(f"[Debug]: {message}")
+
     # ------------------- Chat -------------------
     def add_chat_message(self, msg):
         self.chat_area.config(state=tk.NORMAL)
@@ -143,6 +194,7 @@ class ClientGUI:
         self.listen_thread = None
         self.current_game_id = None
         self.opponent = None
+        self.buffer = ""
 
         # GUI chính
         self.window = tk.Tk()
@@ -173,6 +225,10 @@ class ClientGUI:
         self.btn_challenge = tk.Button(user_frame, text="Thách đấu", bg="#b97a57", fg="white",
                                        command=self.challenge_player, state=tk.DISABLED)
         self.btn_challenge.pack(side=tk.RIGHT, padx=5)
+        self.btn_submit = tk.Button(user_frame, text="Hoàn thành", bg="#28a745", fg="white",
+                                      command=self.submit_solution, state=tk.DISABLED)
+        self.btn_submit.pack(side=tk.RIGHT, padx=5)
+        
         user_frame.pack(pady=5, fill=tk.X)
 
         # Khung Sudoku UI
@@ -220,16 +276,45 @@ class ClientGUI:
                 self.disconnect()
 
     def listen_to_server(self):
+        # Bộ giải mã JSON, dùng để đọc từng object một
+        decoder = json.JSONDecoder()
+        
         while self.connected:
             try:
-                data = self.sock.recv(4096)
+                # 1. Nhận dữ liệu và thêm vào buffer
+                data = self.sock.recv(4096).decode('utf-8')
                 if not data:
-                    break
-                msg = json.loads(data.decode('utf-8'))
-                self.handle_server_message(msg)
+                    break # Server ngắt kết nối
+                
+                self.buffer += data
+                
+                # 2. Xử lý tất cả các tin nhắn hoàn chỉnh có trong buffer
+                while self.buffer:
+                    try:
+                        # 3. Dùng raw_decode để tìm 1 JSON object hoàn chỉnh
+                        # Nó trả về (object, vị trí kết thúc)
+                        msg, idx = decoder.raw_decode(self.buffer)
+                        
+                        # 4. Xử lý tin nhắn
+                        self.window.after(0, self.handle_server_message, msg)
+                        
+                        # 5. Cắt bỏ tin nhắn đã xử lý khỏi buffer
+                        # lstrip() để xóa khoảng trắng (nếu có)
+                        self.buffer = self.buffer[idx:].lstrip()
+                        
+                    except json.JSONDecodeError:
+                        # Nếu buffer không chứa 1 JSON hoàn chỉnh (ví dụ: bị cắt giữa chừng)
+                        # thì break vòng lặp 'while self.buffer'
+                        # và quay lại chờ recv() thêm dữ liệu
+                        break
+            
             except Exception as e:
-                self.ui.add_chat_message(f"Lỗi kết nối: {e}")
+                # Nếu có lỗi nghiêm trọng (ví dụ: mất kết nối)
+                if self.connected: # Chỉ log nếu chúng ta không chủ động ngắt
+                    self.ui.add_chat_message(f"Lỗi kết nối: {e}")
                 break
+                
+        # Chỉ gọi disconnect nếu vòng lặp bị phá vỡ
         self.disconnect()
 
     def handle_server_message(self, message):
@@ -270,13 +355,45 @@ class ClientGUI:
 
         elif action == "game_over":
             winner = message.get("winner")
+            error_list = message.get("errors", []) # LẤY DANH SÁCH LỖI
+
+            if error_list:
+                self.ui.highlight_errors(error_list)
+
+            self.window.update_idletasks()
+
             messagebox.showinfo("Kết thúc", f"Người thắng: {winner}")
             self.ui.disable_all()
+
             self.current_game_id = None
             self.opponent = None
 
+        elif action == "game_finish":
+            # Server xác nhận BẠN đã nộp bài thành công
+            time_remaining = message.get("time")
+            status = message.get("status") # "submitted"
+            
+            messagebox.showinfo("Đã nộp!", f"Bạn đã nộp bài! (Thời gian còn lại: {time_remaining}s). Đang chờ đối thủ...")
+            # Hàm submit_solution của bạn đã tự khóa bàn cờ
+            # nên chúng ta không cần khóa lại ở đây.
+
         elif action == "opponent_finished":
             self.ui.add_chat_message(f" {message.get('name')} đã hoàn thành Sudoku!")
+
+    def submit_solution(self):
+        if not self.current_game_id:
+            return
+            
+        if not self.ui.check_board_full():
+            messagebox.showwarning("Chưa xong", "Bạn phải điền đầy đủ bàn cờ trước khi nộp bài.")
+            return
+
+        self.ui.add_chat_message("Đã nộp bài! Đang chờ đối thủ...")
+        self.send_message({"action": "submit_solution"})
+        
+        # Khóa bàn cờ lại
+        self.ui.disable_all()
+        self.btn_submit.config(state=tk.DISABLED)
 
     # ------------------- Hành động người chơi -------------------
     def challenge_player(self):

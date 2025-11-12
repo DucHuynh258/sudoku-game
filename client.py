@@ -128,10 +128,13 @@ class SudokuUI:
                 cell = self.cells[r][c]
                 cell.config(state="normal")
                 cell.delete(0, tk.END)
+                # Reset tất cả các màu nền về mặc định của game (#f8e9d2)
+                # Phải reset cả disabledbackground và readonlybackground để xóa màu đỏ cũ
+                cell.config(bg="#f8e9d2", disabledbackground="#f8e9d2", readonlybackground="#f8e9d2")
                 num = puzzle[r][c]
                 if num:
                     cell.insert(0, str(num))
-                    cell.config(state="readonly", fg="blue", readonlybackground=cell.cget('bg'))
+                    cell.config(state="readonly", fg="blue", readonlybackground="#f8e9d2")
                 else:
                     cell.config(state="normal", fg="black")
 
@@ -163,8 +166,13 @@ class SudokuUI:
                 r, c = coord
                 cell_widget = self.cells[r][c]
                 
-                # Chúng ta tô màu nền (bg) của ô đó
-                cell_widget.config(bg=error_color)
+                # Thay vì chỉ config bg, hãy config cả disabledbackground và readonlybackground
+                # Điều này đảm bảo khi game over (ô bị disable), nó vẫn hiện màu đỏ
+                cell_widget.config(
+                    bg=error_color, 
+                    disabledbackground=error_color, 
+                    readonlybackground=error_color
+                )
             except Exception as e:
                 self.log(f"Error highlighting cell {coord}: {e}") # Tùy chọn: log
 
@@ -259,15 +267,25 @@ class ClientGUI:
             messagebox.showerror("Lỗi", f"Không thể kết nối: {e}")
 
     def disconnect(self):
+        if not self.connected: 
+            return # Nếu đã ngắt rồi thì thoát luôn, không in log, không xử lý lại
+        
+        self.connected = False # Đặt cờ ngay lập tức
+
         if self.sock:
-            self.sock.close()
-        self.connected = False
+            try:
+                self.sock.close()
+            except:
+                pass
+        self.sock = None
         self.btn_connect.config(state=tk.NORMAL)
         self.btn_disconnect.config(state=tk.DISABLED)
         self.btn_challenge.config(state=tk.DISABLED)
         self.user_listbox.delete(0, tk.END)
-        self.ui.add_chat_message("🔌 Đã ngắt kết nối.")
+        self.current_game_id = None 
         self.challenge_pending = False
+        self.opponent = None
+        self.ui.add_chat_message("🔌 Đã ngắt kết nối.")
 
     def send_message(self, message):
         if self.connected and self.sock:
@@ -386,13 +404,19 @@ class ClientGUI:
             self.challenge_pending = False
 
         elif action == "game_finish":
-            # Server xác nhận BẠN đã nộp bài thành công
             time_remaining = message.get("time")
-            status = message.get("status") # "submitted"
+            should_wait = message.get("wait", True) # Lấy cờ wait
             
-            messagebox.showinfo("Đã nộp!", f"Bạn đã nộp bài! (Thời gian còn lại: {time_remaining}s). Đang chờ đối thủ...")
-            # Hàm submit_solution của bạn đã tự khóa bàn cờ
-            # nên chúng ta không cần khóa lại ở đây.
+            # Chỉ hiện thông báo "Đang chờ" nếu đối thủ CHƯA xong
+            if should_wait:
+                messagebox.showinfo("Đã nộp!", f"Bạn đã nộp bài! (Thời gian còn lại: {time_remaining}s). Đang chờ đối thủ...")
+            else:
+                # Nếu đối thủ xong rồi, không hiện thông báo chờ nữa
+                # Vì ngay sau đây server sẽ gửi tin nhắn "game_over" kèm kết quả luôn
+                pass 
+                
+            # Vẫn khóa nút nộp bài lại
+            self.btn_submit.config(state=tk.DISABLED)
 
         elif action == "opponent_finished":
             self.ui.add_chat_message(f" {message.get('name')} đã hoàn thành Sudoku!")

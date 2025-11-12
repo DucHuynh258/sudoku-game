@@ -5,6 +5,7 @@ import json
 import time
 import queue
 import tkinter as tk
+import random
 from tkinter import scrolledtext
 from pymongo import MongoClient # Cần 'pip install pymongo'
 from sudoku import Sudoku # cần pip install py-sudoku
@@ -111,8 +112,19 @@ class GameSession(threading.Thread):
 
             self.log(f"Game {self.game_id}: {player_name} has submitted.")
             
-            # Gửi thông báo cho chính người chơi
-            self.server.send_to_client(player["conn"], {"action": "game_finish", "status": "submitted", "time": player["time"]})
+            # Kiểm tra xem đối thủ đã xong chưa
+            opponent_is_done = opponent["finished"]
+            
+            # Nếu đối thủ chưa xong -> wait = True (Phải chờ)
+            # Nếu đối thủ xong rồi -> wait = False (Không cần hiện bảng chờ, vì game sắp end ngay lập tức)
+            msg = {
+                "action": "game_finish", 
+                "status": "submitted", 
+                "time": player["time"],
+                "wait": not opponent_is_done  # <--- THÊM CỜ NÀY
+            }
+            
+            self.server.send_to_client(player["conn"], msg)
             # Gửi thông báo cho đối thủ
             self.server.send_to_client(opponent["conn"], {"action": "opponent_finished", "name": player["name"]})
 
@@ -134,7 +146,7 @@ class GameSession(threading.Thread):
     def calculate_errors(self, submission_board):
         """Đếm số ô sai (hoặc trống) so với lời giải"""
         if submission_board is None: # Hết giờ mà chưa nộp
-            return 99 # Phạt
+            return [] 
             
         error_list = []
         for r in range(9):
@@ -142,6 +154,9 @@ class GameSession(threading.Thread):
                 # Nếu ô đó là ô trống mà client điền
                 if self.puzzle_board[r][c] is None:
                     # So sánh với lời giải
+                    user_val = submission_board[r][c]
+                    correct_val = self.solution[r][c]
+
                     if submission_board[r][c] != self.solution[r][c]:
                         error_list.append([r, c]) # THÊM TỌA ĐỘ VÀO LIST
         return error_list
@@ -385,11 +400,20 @@ class ServerGUI:
         username = None
         try:
             while self.running:
-                data = conn.recv(1024)
+                try:
+                    data = conn.recv(4096)
+                except (ConnectionResetError, ConnectionAbortedError):
+                    # Bắt lỗi khi client ngắt kết nối đột ngột (WinError 10054)
+                    # Break để xuống finally xử lý dọn dẹp
+                    break
+                    
                 if not data:
                     break # Client ngắt kết nối
                 
-                message = json.loads(data.decode('utf-8'))
+                try:
+                    message = json.loads(data.decode('utf-8'))
+                except json.JSONDecodeError:
+                    continue # Bỏ qua gói tin lỗi
                 self.log(f"Received from {addr}: {message}")
 
                 action = message.get("action")
@@ -423,8 +447,11 @@ class ServerGUI:
                         game_id = f"game_{username}_{opponent_name}"
                         
                         try:
-                            # 1. Tạo puzzle
-                            puzzle_object = Sudoku(3, 3).difficulty(0.5) 
+                            # 1. Tạo puzzle với seed ngẫu nhiên
+                            # random.randint giúp tạo ra một "hạt giống" mới mỗi lần chạy
+                            seed_value = random.randint(1, 1000000000)
+                            puzzle_object = Sudoku(3, 3, seed=seed_value).difficulty(0.5) 
+                            
                             # 2. Giải nó để có lời giải
                             solution_object = puzzle_object.solve()
                         
@@ -501,64 +528,104 @@ class ServerGUI:
                         self.send_to_client(opponent_conn, fwd_msg)
 
         except Exception as e:
-            self.log(f"Error handling client {addr}: {e}")
-        # ... bên trong hàm handle_client ...
+            self.log(f"Unexpected error with {addr}: {e}")
+        
         finally:
-            if username and username in self.clients:
-                del self.clients[username]
-                self.update_client_listbox()
-                self.broadcast_user_list()
+            # --- PHẦN QUAN TRỌNG NHẤT: DỌN DẸP KHI NGẮT KẾT NỐI ---
+            self.log(f"Cleaning up connection for {username} ({addr})")
+            
+            if username:
+                # 1. Xóa khỏi danh sách client online
+                if username in self.clients:
+                    del self.clients[username]
+                    self.update_client_listbox()
+                    self.broadcast_user_list()
                 
-                # [LOGIC: Dọn dẹp game nếu client thoát]
-                game_to_remove = None
-                for game_id, game in self.active_games.items():
-                    if game.player1["name"] == username or game.player2["name"] == username:
-                        opponent_name = game.player2["name"] if game.player1["name"] == username else game.player1["name"]
-                        self.end_game(game_id, winner=opponent_name) # Đối thủ thắng
-                        break
+                # 2. TÌM VÀ HỦY GAME NGAY LẬP TỨC
+                # Dùng list() để tạo bản sao keys vì ta sẽ thay đổi dictionary trong loop
+                game_ids = list(self.active_games.keys())
+                for game_id in game_ids:
+                    game = self.active_games.get(game_id)
+                    if game:
+                        if game.player1["name"] == username or game.player2["name"] == username:
+                            # Xác định người thắng là người còn lại
+                            winner_name = game.player2["name"] if game.player1["name"] == username else game.player1["name"]
+                            self.log(f"User {username} disconnected. Force ending game {game_id}")
+                            
+                            # Gọi hàm end_game với cờ force_stop
+                            self.end_game(game_id, winner=winner_name, reason="disconnect")
 
             conn.close()
             self.log(f"Connection from {addr} (User: {username}) closed.")
 
-    # Thêm hàm này vào BÊN TRONG lớp ServerGUI
-    def end_game(self, game_id, winner):
-        self.log(f"Ending game {game_id}. Winner: {winner}")
+    def end_game(self, game_id, winner, reason="normal"):
+        self.log(f"Ending game {game_id}. Winner: {winner} (Reason: {reason})")
         
-        # Lấy game ra khỏi danh sách active
-        game = self.active_games.pop(game_id, None)
+        # Lấy game ra và XÓA KHỎI DANH SÁCH ACTIVE
+        game = self.active_games.pop(game_id, None) 
         
         if game:
-            # Dừng luồng timer của game đó
-            game.stop()
+            game.stop() # Dừng timer
             
-            # Chuẩn bị dữ liệu để lưu vào MongoDB
-            game_data = {
-                "game_id": game_id,
-                "player1": game.player1["name"],
-                "player2": game.player2["name"],
-                "winner": winner,
-                "end_time": time.time(),
-                "duration": (game.player1["time"] + game.player2["time"]) # Cần tính toán lại logic này, ví dụ: (TotalTime * 2) - (p1.time + p2.time)
-            }
             # Lưu vào DB
-            self.save_match_to_db(game_data)
-            
-            # Tin nhắn cho Player 1 (gửi kèm danh sách lỗi CỦA P1)
-            msg1 = {
-                "action": "game_over", 
-                "winner": winner,
-                "errors": game.player1.get("error_list", []) # Lấy ds lỗi
-            }
-            
-            # Tin nhắn cho Player 2 (gửi kèm danh sách lỗi CỦA P2)
-            msg2 = {
-                "action": "game_over", 
-                "winner": winner,
-                "errors": game.player2.get("error_list", []) # Lấy ds lỗi
-            }
-            self.send_to_client(game.player1["conn"], msg1)
-            self.send_to_client(game.player2["conn"], msg2)
+            if reason == "normal":
+                try:
+                    game_data = {
+                        "game_id": game_id,
+                        "player1": game.player1["name"],
+                        "player2": game.player2["name"],
+                        "winner": winner,
+                        "end_time": time.time(),
+                        "duration": (300 - game.player1["time"]) 
+                    }
+                    self.save_match_to_db(game_data)
+                except Exception as e:
+                    self.log(f"Error saving to DB: {e}")
 
+            # --- PHÂN LOẠI CÁCH GỬI TIN NHẮN ---
+            
+            if reason == "disconnect":
+                # TRƯỜNG HỢP 1: ĐỐI THỦ THOÁT
+                # Chỉ gửi tin cho người còn lại
+                remaining_player_conn = None
+                if game.player1["name"] == winner:
+                    remaining_player_conn = game.player1["conn"]
+                elif game.player2["name"] == winner:
+                    remaining_player_conn = game.player2["conn"]
+                
+                if remaining_player_conn:
+                    msg = {
+                        "action": "game_over", 
+                        "winner": winner,
+                        "errors": [], # Đối thủ thoát thì không cần hiện lỗi
+                        "message": "Đối thủ đã thoát! Bạn thắng."
+                    }
+                    self.send_to_client(remaining_player_conn, msg)
+            
+            else:
+                # TRƯỜNG HỢP 2: KẾT THÚC BÌNH THƯỜNG (Cả 2 nộp bài hoặc hết giờ)
+                # Phải gửi tin nhắn cho CẢ HAI, mỗi người nhận danh sách lỗi CỦA RIÊNG MÌNH
+                
+                # Gửi cho Player 1
+                msg1 = {
+                    "action": "game_over",
+                    "winner": winner,
+                    "errors": game.player1["error_list"], # <--- Lấy list lỗi của P1
+                    "message": f"Kết thúc! Người thắng: {winner}"
+                }
+                self.send_to_client(game.player1["conn"], msg1)
+
+                # Gửi cho Player 2
+                msg2 = {
+                    "action": "game_over",
+                    "winner": winner,
+                    "errors": game.player2["error_list"], # <--- Lấy list lỗi của P2
+                    "message": f"Kết thúc! Người thắng: {winner}"
+                }
+                self.send_to_client(game.player2["conn"], msg2)
+
+        else:
+            self.log(f"Game {game_id} not found in active_games (Already ended?)")
     def send_to_client(self, conn, message):
         try:
             conn.sendall(json.dumps(message).encode('utf-8'))

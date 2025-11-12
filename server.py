@@ -460,6 +460,9 @@ class ServerGUI:
                         
                         self.active_games[game_id] = game_session
                         game_session.start()
+                    elif opponent_conn:
+                        decline_msg = {"action": "challenge_declined", "opponent": username}
+                        self.send_to_client(opponent_conn, decline_msg)
 
                 # ... bên trong hàm handle_client ...
 

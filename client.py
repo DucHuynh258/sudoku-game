@@ -195,6 +195,7 @@ class ClientGUI:
         self.current_game_id = None
         self.opponent = None
         self.buffer = ""
+        self.challenge_pending = False
 
         # GUI chính
         self.window = tk.Tk()
@@ -266,6 +267,7 @@ class ClientGUI:
         self.btn_challenge.config(state=tk.DISABLED)
         self.user_listbox.delete(0, tk.END)
         self.ui.add_chat_message("🔌 Đã ngắt kết nối.")
+        self.challenge_pending = False
 
     def send_message(self, message):
         if self.connected and self.sock:
@@ -330,6 +332,9 @@ class ClientGUI:
             accept = messagebox.askyesno("Thách đấu", f"{challenger} thách đấu bạn! Chấp nhận?")
             resp = {"action": "challenge_response", "opponent": challenger, "accept": accept}
             self.send_message(resp)
+            if accept:
+                self.btn_challenge.config(state=tk.DISABLED)
+                self.challenge_pending = False
 
         elif action == "game_start":
             self.current_game_id = message.get("game_id")
@@ -337,6 +342,8 @@ class ClientGUI:
             puzzle = message.get("puzzle")
             self.ui.display_puzzle(puzzle)
             self.ui.add_chat_message(f" Game bắt đầu với {self.opponent}")
+            self.btn_challenge.config(state=tk.DISABLED)
+            self.challenge_pending = False
 
         elif action == "move":
             cell = message.get("cell")
@@ -367,6 +374,16 @@ class ClientGUI:
 
             self.current_game_id = None
             self.opponent = None
+            if self.connected:
+                self.btn_challenge.config(state=tk.NORMAL)
+            self.challenge_pending = False
+
+        elif action == "challenge_declined":
+            decliner = message.get("opponent")
+            self.ui.add_chat_message(f"❌ {decliner} đã từ chối lời thách đấu.")
+            if self.connected and not self.current_game_id:
+                self.btn_challenge.config(state=tk.NORMAL)
+            self.challenge_pending = False
 
         elif action == "game_finish":
             # Server xác nhận BẠN đã nộp bài thành công
@@ -398,6 +415,12 @@ class ClientGUI:
     # ------------------- Hành động người chơi -------------------
     def challenge_player(self):
         sel = self.user_listbox.curselection()
+        if self.current_game_id:
+            messagebox.showinfo("Thách đấu", "Bạn đang trong trận đấu hiện tại.")
+            return
+        if self.challenge_pending:
+            messagebox.showinfo("Thách đấu", "Đang chờ phản hồi lời thách đấu trước.")
+            return
         if not sel:
             messagebox.showwarning("Thách đấu", "Chọn người chơi để thách đấu!")
             return
@@ -405,6 +428,8 @@ class ClientGUI:
         msg = {"action": "challenge", "opponent": opp}
         self.send_message(msg)
         self.ui.add_chat_message(f"📤 Đã gửi lời mời thách đấu tới {opp}")
+        self.btn_challenge.config(state=tk.DISABLED)
+        self.challenge_pending = True
 
     def send_chat(self):
         text = self.ui.chat_entry.get()

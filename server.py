@@ -111,7 +111,7 @@ class GameSession(threading.Thread):
             player["submission_board"] = [row[:] for row in player["board"]] 
 
             self.log(f"Game {self.game_id}: {player_name} has submitted.")
-            
+
             # Kiểm tra xem đối thủ đã xong chưa
             opponent_is_done = opponent["finished"]
             
@@ -526,6 +526,29 @@ class ServerGUI:
                         opponent_conn = game.player2["conn"] if username == game.player1["name"] else game.player1["conn"]
                         fwd_msg = {"action": "chat_message", "from": username, "message": message.get("message")}
                         self.send_to_client(opponent_conn, fwd_msg)
+
+                elif action == "get_history":
+                    # 1. Tìm tất cả trận đấu mà user này tham gia (làm P1 hoặc P2)
+                    # Sắp xếp theo thời gian giảm dần (mới nhất lên đầu)
+                    # Lấy 20 trận gần nhất
+                    try:
+                        history_cursor = self.history_collection.find(
+                            {"$or": [{"player1": username}, {"player2": username}]}
+                        ).sort("end_time", -1).limit(20)
+                        
+                        history_list = []
+                        for match in history_cursor:
+                            # Convert object _id sang string (vì JSON không gửi được objectID)
+                            match["_id"] = str(match["_id"])
+                            history_list.append(match)
+                        
+                        # 2. Gửi trả về client
+                        resp = {"action": "history_data", "data": history_list}
+                        self.send_to_client(conn, resp)
+                        self.log(f"Sent history data to {username}")
+                        
+                    except Exception as e:
+                        self.log(f"Error fetching history: {e}")
 
         except Exception as e:
             self.log(f"Unexpected error with {addr}: {e}")

@@ -54,6 +54,24 @@ class SudokuUI:
                         self.cells[gr][gc] = cell
                         self.cell_name_to_coord[str(cell)] = (gr, gc)
 
+        button_frame = tk.Frame(self.window, bg="#f4ede4")
+        button_frame.pack(pady=(0, 10)) # Cách trên 0, cách dưới 10
+
+        # Tạo nút Hoàn Thành
+        # LƯU Ý QUAN TRỌNG: Gán nó vào self.client.btn_submit 
+        # để các hàm logic bên dưới vẫn điều khiển được nó (bật/tắt)
+        self.client.btn_submit = tk.Button(
+            button_frame, 
+            text="Hoàn thành", 
+            bg="#28a745", 
+            fg="white",
+            font=("Arial", 12, "bold"), # Cho to lên một chút cho đẹp
+            command=self.client.submit_solution, 
+            state=tk.DISABLED,
+            width=15
+        )
+        self.client.btn_submit.pack()
+
         # Chat box
         chat_label = tk.Label(self.window, text="Chat", font=("Arial", 14, "bold"), bg="#f4ede4", fg="#5a3825")
         chat_label.pack(pady=(10, 0))
@@ -234,10 +252,14 @@ class ClientGUI:
         self.btn_challenge = tk.Button(user_frame, text="Thách đấu", bg="#b97a57", fg="white",
                                        command=self.challenge_player, state=tk.DISABLED)
         self.btn_challenge.pack(side=tk.RIGHT, padx=5)
-        self.btn_submit = tk.Button(user_frame, text="Hoàn thành", bg="#28a745", fg="white",
-                                      command=self.submit_solution, state=tk.DISABLED)
-        self.btn_submit.pack(side=tk.RIGHT, padx=5)
+        # self.btn_submit = tk.Button(user_frame, text="Hoàn thành", bg="#28a745", fg="white",
+        #                               command=self.submit_solution, state=tk.DISABLED)
+        # self.btn_submit.pack(side=tk.RIGHT, padx=5)
         
+        self.btn_history = tk.Button(user_frame, text="Lịch sử", bg="#6c757d", fg="white",
+                                     command=self.request_history, state=tk.DISABLED)
+        self.btn_history.pack(side=tk.RIGHT, padx=5)
+
         user_frame.pack(pady=5, fill=tk.X)
 
         # Khung Sudoku UI
@@ -262,6 +284,7 @@ class ClientGUI:
             self.btn_connect.config(state=tk.DISABLED)
             self.btn_disconnect.config(state=tk.NORMAL)
             self.btn_challenge.config(state=tk.NORMAL)
+            self.btn_history.config(state=tk.NORMAL)
             self.ui.add_chat_message(f" Kết nối thành công với tên: {self.username}")
         except Exception as e:
             messagebox.showerror("Lỗi", f"Không thể kết nối: {e}")
@@ -281,6 +304,7 @@ class ClientGUI:
         self.btn_connect.config(state=tk.NORMAL)
         self.btn_disconnect.config(state=tk.DISABLED)
         self.btn_challenge.config(state=tk.DISABLED)
+        self.btn_history.config(state=tk.DISABLED)
         self.user_listbox.delete(0, tk.END)
         self.current_game_id = None 
         self.challenge_pending = False
@@ -371,6 +395,10 @@ class ClientGUI:
         elif action == "chat_message":
             self.ui.add_chat_message(f"[{message.get('from')}]: {message.get('message')}")
 
+        elif action == "history_data":
+            data = message.get("data", [])
+            self.show_history_popup(data)
+
         elif action == "timer_update":
             my_t = message.get("my_time", 0)
             op_t = message.get("opponent_time", 0)
@@ -420,6 +448,71 @@ class ClientGUI:
 
         elif action == "opponent_finished":
             self.ui.add_chat_message(f" {message.get('name')} đã hoàn thành Sudoku!")
+
+    def request_history(self):
+        """Gửi yêu cầu lấy lịch sử đấu"""
+        if self.connected:
+            self.send_message({"action": "get_history"})
+
+    def show_history_popup(self, history_data):
+        """Hiển thị cửa sổ popup chứa bảng lịch sử"""
+        import time # Import time để xử lý ngày tháng
+        
+        top = tk.Toplevel(self.window)
+        top.title(f"Lịch sử đấu của {self.username}")
+        top.geometry("600x400")
+        top.configure(bg="#f4ede4")
+
+        # Sử dụng Treeview để làm bảng
+        from tkinter import ttk
+        columns = ("time", "opponent", "result", "duration")
+        tree = ttk.Treeview(top, columns=columns, show="headings", height=15)
+        
+        # Định nghĩa cột
+        tree.heading("time", text="Thời gian")
+        tree.heading("opponent", text="Đối thủ")
+        tree.heading("result", text="Kết quả")
+        tree.heading("duration", text="Thời lượng")
+        
+        tree.column("time", width=150, anchor="center")
+        tree.column("opponent", width=100, anchor="center")
+        tree.column("result", width=100, anchor="center")
+        tree.column("duration", width=100, anchor="center")
+        
+        tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Đổ dữ liệu
+        for match in history_data:
+            # 1. Xử lý thời gian
+            end_time = match.get("end_time", 0)
+            date_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(end_time))
+            
+            # 2. Xác định đối thủ và kết quả
+            p1 = match.get("player1")
+            p2 = match.get("player2")
+            winner = match.get("winner")
+            
+            if self.username == p1:
+                opponent = p2
+            else:
+                opponent = p1
+            
+            if winner == self.username:
+                res = "THẮNG"
+            elif winner == "Draw" or winner == "Draw (Timeout)":
+                res = "HÒA"
+            else:
+                res = "THUA"
+            
+            # 3. Thời lượng
+            duration = match.get("duration", 0)
+            dur_str = f"{int(duration)}s"
+            
+            # Thêm vào bảng (thêm tag màu sắc nếu muốn)
+            tree.insert("", tk.END, values=(date_str, opponent, res, dur_str))
+
+        # Nút đóng
+        tk.Button(top, text="Đóng", command=top.destroy).pack(pady=5)
 
     def submit_solution(self):
         if not self.current_game_id:

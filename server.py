@@ -14,7 +14,7 @@ from sudoku import Sudoku # cần pip install py-sudoku
 # Đảm bảo bạn có 'import time' ở đầu file
 
 class GameSession(threading.Thread):
-    def __init__(self, server_instance, game_id, p1_conn, p1_name, p2_conn, p2_name, puzzle_board, solution_board, total_time=300):
+    def __init__(self, server_instance, game_id, p1_conn, p1_name, p2_conn, p2_name, puzzle_board, solution_board, total_time=15*60):
         super().__init__(daemon=True)
         self.server = server_instance
         self.game_id = game_id

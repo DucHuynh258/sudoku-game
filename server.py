@@ -47,7 +47,7 @@ class GameSession(threading.Thread):
         self.puzzle_board = puzzle_board
         
         self.running = True
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.log(f"GameSession {game_id} (RACE MODE) created between {p1_name} and {p2_name}.")
 
     def log(self, message):
@@ -80,14 +80,12 @@ class GameSession(threading.Thread):
                 
                 # Kiểm tra P1 hết giờ
                 if not self.player1["finished"] and self.player1["time"] <= 0:
-                    self.player1["finished"] = True # Hết giờ = tính là xong (thua)
                     self.log(f"Game {self.game_id}: {self.player1['name']} timed out.")
                     self.handle_submission(self.player1["name"])
                     self.server.send_to_client(self.player2["conn"], {"action": "opponent_finished", "name": self.player1['name']})
 
                 # Kiểm tra P2 hết giờ
                 if not self.player2["finished"] and self.player2["time"] <= 0:
-                    self.player2["finished"] = True # Hết giờ = tính là xong (thua)
                     self.log(f"Game {self.game_id}: {self.player2['name']} timed out.")
                     self.handle_submission(self.player2["name"])
                     self.server.send_to_client(self.player1["conn"], {"action": "opponent_finished", "name": self.player2['name']})
@@ -144,21 +142,23 @@ class GameSession(threading.Thread):
         self.server.send_to_client(self.player2["conn"], msg2)
 
     def calculate_errors(self, submission_board):
-        """Đếm số ô sai (hoặc trống) so với lời giải"""
-        if submission_board is None: # Hết giờ mà chưa nộp
-            return [] 
-            
         error_list = []
+        """Đếm số ô sai (hoặc trống) so với lời giải"""
+        if submission_board is None: 
+            for r in range(9):
+                for c in range(9):
+                    error_list.append([r, c])
+            return error_list
+            
         for r in range(9):
             for c in range(9):
-                # Nếu ô đó là ô trống mà client điền
+                # Chỉ kiểm tra những ô cần điền (ô đề bài là None trong puzzle_board gốc)
                 if self.puzzle_board[r][c] is None:
-                    # So sánh với lời giải
-                    user_val = submission_board[r][c]
-                    correct_val = self.solution[r][c]
-
+                    # So sánh giá trị người chơi điền với lời giải
+                    # Nếu ô trống (None) != số lời giải -> Tính là lỗi
+                    # Nếu điền sai số != số lời giải -> Tính là lỗi
                     if submission_board[r][c] != self.solution[r][c]:
-                        error_list.append([r, c]) # THÊM TỌA ĐỘ VÀO LIST
+                        error_list.append([r, c]) 
         return error_list
 
     def score_and_end_game(self):

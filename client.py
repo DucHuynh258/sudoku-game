@@ -433,17 +433,18 @@ class ClientGUI:
 
         elif action == "game_finish":
             time_remaining = message.get("time")
-            should_wait = message.get("wait", True) # Lấy cờ wait
+            should_wait = message.get("wait", True)
             
-            # Chỉ hiện thông báo "Đang chờ" nếu đối thủ CHƯA xong
+            # KHÓA BÀN CỜ NGAY LẬP TỨC KHI SERVER BÁO ĐÃ NỘP (HOẶC HẾT GIỜ)
+            self.ui.disable_all() 
+            
             if should_wait:
-                messagebox.showinfo("Đã nộp!", f"Bạn đã nộp bài! (Thời gian còn lại: {time_remaining}s). Đang chờ đối thủ...")
-            else:
-                # Nếu đối thủ xong rồi, không hiện thông báo chờ nữa
-                # Vì ngay sau đây server sẽ gửi tin nhắn "game_over" kèm kết quả luôn
-                pass 
-                
-            # Vẫn khóa nút nộp bài lại
+                # Nếu hết giờ, time_remaining sẽ là 0 hoặc số âm
+                if time_remaining <= 0:
+                    messagebox.showwarning("Hết giờ!", "Bạn đã hết thời gian! Bài làm đã được thu tự động.")
+                else:
+                    messagebox.showinfo("Đã nộp!", f"Bạn đã nộp bài! Đang chờ đối thủ...")
+            
             self.btn_submit.config(state=tk.DISABLED)
 
         elif action == "opponent_finished":

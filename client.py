@@ -51,6 +51,7 @@ class SudokuUI:
                             highlightcolor="#c0392b"
                         )
                         cell.grid(row=r, column=c, padx=2, pady=2, ipadx=2, ipady=2)
+                        cell.bind("<Key>", self.handle_keypress)
                         self.cells[gr][gc] = cell
                         self.cell_name_to_coord[str(cell)] = (gr, gc)
 
@@ -88,6 +89,44 @@ class SudokuUI:
                                     font=("Arial", 12), bg="#f4ede4", fg="#5a3825")
         self.timer_label.pack()
 
+    def handle_keypress(self, event):
+        """Xử lý di chuyển mũi tên và tự động xóa số cũ khi nhập số mới"""
+        widget = event.widget
+        
+        # 1. XỬ LÝ DI CHUYỂN (Mũi tên)
+        if event.keysym in ('Up', 'Down', 'Left', 'Right'):
+            try:
+                # Lấy tọa độ hiện tại
+                r, c = self.cell_name_to_coord[str(widget)]
+                
+                # Tính toán tọa độ mới
+                if event.keysym == 'Up':
+                    r = (r - 1) % 9 # % 9 để vòng ngược lại nếu đi quá biên (tùy chọn)
+                elif event.keysym == 'Down':
+                    r = (r + 1) % 9
+                elif event.keysym == 'Left':
+                    c = (c - 1) % 9
+                elif event.keysym == 'Right':
+                    c = (c + 1) % 9
+                
+                # Focus vào ô mới
+                target_cell = self.cells[r][c]
+                target_cell.focus_set()
+                
+                # (Tùy chọn) Đặt con trỏ văn bản về cuối ô
+                target_cell.icursor(tk.END)
+                
+                return "break" # Ngăn hành vi mặc định của phím mũi tên
+            except KeyError:
+                pass
+
+        # 2. XỬ LÝ GHI ĐÈ (Nhập số)
+        # Nếu phím ấn là số 1-9 và ô đang ở trạng thái cho phép nhập (normal)
+        if event.char in "123456789" and widget.cget('state') == 'normal':
+            # Xóa nội dung cũ đi trước
+            widget.delete(0, tk.END)
+            # Không return "break" -> Để cho Tkinter tự động điền số mới vào
+
     def check_board_full(self):
         """Kiểm tra xem tất cả ô có thể điền đã được điền chưa"""
         for r in range(9):
@@ -124,6 +163,7 @@ class SudokuUI:
 
         try:
             r, c = self.cell_name_to_coord[widget_name]
+            self.client.send_move(r, c, 0)
         except KeyError:
             return False
 

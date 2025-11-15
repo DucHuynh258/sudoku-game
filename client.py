@@ -6,7 +6,7 @@ from tkinter import simpledialog, messagebox, scrolledtext
 
 
 # =====================================================
-# LỚP GIAO DIỆN SUDOKU 
+# LỚP GIAO DIỆN SUDOKU 
 # =====================================================
 class SudokuUI:
     def __init__(self, window, client):
@@ -17,18 +17,39 @@ class SudokuUI:
         self.build_ui()
 
     def build_ui(self):
-        self.window.title("Sudoku Multiplayer")
-        self.window.configure(bg="#f4ede4")
+        # ===============================================
+        # DÙNG PANEDWINDOW (Cửa sổ 2 ngăn)
+        # ===============================================
+        
+        main_pane = tk.PanedWindow(
+            self.window, 
+            orient=tk.HORIZONTAL, 
+            bg="#f4ede4", 
+            sashrelief=tk.RIDGE, 
+            sashwidth=5
+        )
+        main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 10))
 
-        # Tiêu đề
+        # 2. Frame bên trái (Game)
+        left_frame = tk.Frame(main_pane, bg="#f4ede4")
+        main_pane.add(left_frame, minsize=550) 
+
+        # 3. Frame bên phải (User List + Chat)
+        right_panel = tk.Frame(main_pane, bg="#f4ede4")
+        main_pane.add(right_panel, minsize=300)
+
+        # ===============================================
+        # WIDGETS TRONG left_frame (GAME)
+        # ===============================================
+
         title = tk.Label(
-            self.window, text="Sudoku Multiplayer",
+            left_frame, 
+            text="Sudoku Multiplayer",
             font=("Arial", 24, "bold"), bg="#f4ede4", fg="#5a3825"
         )
         title.pack(pady=(10, 5))
 
-        # Khung Sudoku
-        self.game_frame = tk.Frame(self.window, bg="#8B5A2B", bd=8, relief="ridge")
+        self.game_frame = tk.Frame(left_frame, bg="#8B5A2B", bd=8, relief="ridge")
         self.game_frame.pack(pady=10)
 
         vcmd = (self.window.register(self.validate_entry), '%P', '%W')
@@ -55,40 +76,94 @@ class SudokuUI:
                         self.cells[gr][gc] = cell
                         self.cell_name_to_coord[str(cell)] = (gr, gc)
 
-        button_frame = tk.Frame(self.window, bg="#f4ede4")
-        button_frame.pack(pady=(0, 10)) # Cách trên 0, cách dưới 10
+        button_frame = tk.Frame(left_frame, bg="#f4ede4") 
+        button_frame.pack(pady=(0, 10)) 
 
-        # Tạo nút Hoàn Thành
-        # LƯU Ý QUAN TRỌNG: Gán nó vào self.client.btn_submit 
-        # để các hàm logic bên dưới vẫn điều khiển được nó (bật/tắt)
         self.client.btn_submit = tk.Button(
             button_frame, 
             text="Hoàn thành", 
             bg="#28a745", 
             fg="white",
-            font=("Arial", 12, "bold"), # Cho to lên một chút cho đẹp
+            font=("Arial", 12, "bold"), 
             command=self.client.submit_solution, 
             state=tk.DISABLED,
             width=15
         )
         self.client.btn_submit.pack()
 
-        # Chat box
-        chat_label = tk.Label(self.window, text="Chat", font=("Arial", 14, "bold"), bg="#f4ede4", fg="#5a3825")
-        chat_label.pack(pady=(10, 0))
+        self.timer_label = tk.Label(
+            left_frame, 
+            text="My Time: 0:00 | Opponent: 0:00",
+            font=("Arial", 12), bg="#f4ede4", fg="#5a3825"
+        )
+        self.timer_label.pack(pady=5)
 
-        self.chat_area = scrolledtext.ScrolledText(self.window, height=8, state=tk.DISABLED,
-                                                   bg="#fff9f4", fg="#2c2c2c", wrap="word", relief="solid")
-        self.chat_area.pack(pady=5, fill=tk.X)
 
-        self.chat_entry = tk.Entry(self.window, width=40, font=('Arial', 12), bg="#f8e9d2", relief="solid")
-        self.chat_entry.pack(fill=tk.X, pady=(0, 10))
+        # ===============================================
+        # WIDGETS TRONG right_panel (USER LIST + CHAT)
+        # ===============================================
+
+        # --- 1. KHUNG USER LIST (Ở trên) ---
+        user_frame = tk.Frame(right_panel, bg="#f4ede4")
+        user_frame.pack(side=tk.TOP, fill=tk.X, pady=(5, 0), padx=5)
+
+        self.client.user_listbox = tk.Listbox(user_frame, height=5)
+        self.client.user_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        self.client.btn_challenge = tk.Button(user_frame, text="Thách đấu", bg="#b97a57", fg="white",
+                                       command=self.client.challenge_player, state=tk.DISABLED)
+        self.client.btn_challenge.pack(side=tk.RIGHT, padx=5)
+        
+        self.client.btn_history = tk.Button(user_frame, text="Lịch sử", bg="#6c757d", fg="white",
+                                     command=self.client.request_history, state=tk.DISABLED)
+        self.client.btn_history.pack(side=tk.RIGHT, padx=5)
+
+        # --- 2. KHUNG CHAT (Ở dưới) ---
+        chat_container = tk.Frame(right_panel, bg="#f4ede4")
+        chat_container.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=5, pady=(5,0))
+        
+        chat_label = tk.Label(
+            chat_container, 
+            text="Chat", 
+            font=("Arial", 14, "bold"), bg="#f4ede4", fg="#5a3825"
+        )
+        # 1. Pack Label lên TOP
+        chat_label.pack(side=tk.TOP, pady=(5, 0)) 
+        
+        
+        # 🌟🌟🌟 SỬA LỖI TẠI ĐÂY 🌟🌟🌟
+        
+        # --- FRAME BAO Ô NHẬP CHAT (giúp có padding đẹp) ---
+        # FIX: Đã sửa lỗi thụt lề
+        entry_frame = tk.Frame(chat_container, bg="#f4ede4")
+        entry_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 12), padx=8)
+
+        # --- Ô NHẬP CHAT TO HƠN ---
+        # FIX: Đã sửa lỗi thụt lề
+        self.chat_entry = tk.Entry(
+            entry_frame,
+            font=('Arial', 14),           # chữ lớn hơn
+            bg="#f8e9d2",
+            relief="solid",
+            borderwidth=2,
+        )
+        # tăng chiều cao + khoảng thở
+        self.chat_entry.pack(fill=tk.X, ipady=30)
+        # FIX: Đã XÓA dòng bind bị lặp
         self.chat_entry.bind("<Return>", lambda e: self.client.send_chat())
 
-        self.timer_label = tk.Label(self.window, text="My Time: 0:00 | Opponent: 0:00",
-                                    font=("Arial", 12), bg="#f4ede4", fg="#5a3825")
-        self.timer_label.pack()
+        # TẠO VÀ PACK Ô HIỂN THỊ CHAT VÀO GIỮA SAU
+        self.chat_area = scrolledtext.ScrolledText(
+            chat_container, 
+            state=tk.DISABLED,
+            bg="#fff9f4", fg="#2c2c2c", wrap="word", relief="solid"
+        )
+        # 3. Pack ô chat vào phần CÒN LẠI (ở giữa)
+        # Nó sẽ fill vào không gian giữa label và entry
+        self.chat_area.pack(side=tk.TOP, pady=5, fill=tk.BOTH, expand=True) 
+        # 🌟🌟🌟 KẾT THÚC SỬA LỖI 🌟🌟🌟
 
+        
     def handle_keypress(self, event):
         """Xử lý di chuyển mũi tên và tự động xóa số cũ khi nhập số mới"""
         widget = event.widget
@@ -96,12 +171,10 @@ class SudokuUI:
         # 1. XỬ LÝ DI CHUYỂN (Mũi tên)
         if event.keysym in ('Up', 'Down', 'Left', 'Right'):
             try:
-                # Lấy tọa độ hiện tại
                 r, c = self.cell_name_to_coord[str(widget)]
                 
-                # Tính toán tọa độ mới
                 if event.keysym == 'Up':
-                    r = (r - 1) % 9 # % 9 để vòng ngược lại nếu đi quá biên (tùy chọn)
+                    r = (r - 1) % 9 
                 elif event.keysym == 'Down':
                     r = (r + 1) % 9
                 elif event.keysym == 'Left':
@@ -109,50 +182,41 @@ class SudokuUI:
                 elif event.keysym == 'Right':
                     c = (c + 1) % 9
                 
-                # Focus vào ô mới
                 target_cell = self.cells[r][c]
                 target_cell.focus_set()
-                
-                # (Tùy chọn) Đặt con trỏ văn bản về cuối ô
                 target_cell.icursor(tk.END)
                 
-                return "break" # Ngăn hành vi mặc định của phím mũi tên
+                return "break" 
             except KeyError:
                 pass
 
         # 2. XỬ LÝ GHI ĐÈ (Nhập số)
-        # Nếu phím ấn là số 1-9 và ô đang ở trạng thái cho phép nhập (normal)
         if event.char in "123456789" and widget.cget('state') == 'normal':
-            # Xóa nội dung cũ đi trước
             widget.delete(0, tk.END)
-            # Không return "break" -> Để cho Tkinter tự động điền số mới vào
 
     def check_board_full(self):
         """Kiểm tra xem tất cả ô có thể điền đã được điền chưa"""
         for r in range(9):
             for c in range(9):
                 cell = self.cells[r][c]
-                # Nếu ô đó không phải là 'readonly' (ô đề bài) 
-                # và nó đang trống
                 if cell.cget('state') != 'readonly' and not cell.get():
-                    return False # Vẫn còn ô trống
-        return True # Đã đầy
+                    return False 
+        return True 
 
     def delayed_check_full(self):
         """
         Kiểm tra sau 1ms để đảm bảo tkinter đã cập nhật giá trị.
         Hàm này sẽ Bật hoặc Tắt nút 'Hoàn thành'
         """
-        if self.check_board_full():
-            self.client.btn_submit.config(state=tk.NORMAL)
-        else:
-            self.client.btn_submit.config(state=tk.DISABLED)
+        if self.client.btn_submit:
+            if self.check_board_full():
+                self.client.btn_submit.config(state=tk.NORMAL)
+            else:
+                self.client.btn_submit.config(state=tk.DISABLED)
 
     # ------------------- Sudoku logic -------------------
     def validate_entry(self, value, widget_name):
         """Chỉ cho phép nhập số 1-9"""
-        # Lên lịch kiểm tra, bất kể phím gõ là gì
-        # 'after(1)' đảm bảo nó chạy SAU KHI tkinter đã cập nhật ô
         self.window.after(1, self.delayed_check_full)
 
         if not (value == "" or (len(value) == 1 and value in "123456789")):
@@ -163,19 +227,22 @@ class SudokuUI:
 
         try:
             r, c = self.cell_name_to_coord[widget_name]
-            self.client.send_move(r, c, 0)
         except KeyError:
-            return False
+            return True 
 
         if value == "":
-            # Người dùng đang xóa số
-            # [Tùy chọn: Gửi nước đi là None/0 để cập nhật]
-            # self.client.send_move(r, c, None) 
+            try:
+                self.client.send_move(r, c, 0)
+            except KeyError:
+                pass 
             return True
         
-        # Người dùng đang thêm số
-        self.client.send_move(r, c, int(value))
-        self.cells[r][c].config(fg="#555555")
+        try:
+            r, c = self.cell_name_to_coord[widget_name]
+            self.client.send_move(r, c, int(value))
+            self.cells[r][c].config(fg="#555555")
+        except KeyError:
+            pass 
 
         return True
 
@@ -186,8 +253,6 @@ class SudokuUI:
                 cell = self.cells[r][c]
                 cell.config(state="normal")
                 cell.delete(0, tk.END)
-                # Reset tất cả các màu nền về mặc định của game (#f8e9d2)
-                # Phải reset cả disabledbackground và readonlybackground để xóa màu đỏ cũ
                 cell.config(bg="#f8e9d2", disabledbackground="#f8e9d2", readonlybackground="#f8e9d2")
                 num = puzzle[r][c]
                 if num:
@@ -215,40 +280,37 @@ class SudokuUI:
 
     def highlight_errors(self, error_list):
         """Nhận 1 list tọa độ [[r, c], ...] và tô màu các ô đó"""
-        error_color = "#FC665C" # Đây là màu rgb(252, 102, 92)
+        error_color = "#FC665C" 
         
-        self.log(f"Highlighting {len(error_list)} errors.") # Tùy chọn: log
+        self.log(f"Highlighting {len(error_list)} errors.") 
         
         for coord in error_list:
             try:
                 r, c = coord
                 cell_widget = self.cells[r][c]
                 
-                # Thay vì chỉ config bg, hãy config cả disabledbackground và readonlybackground
-                # Điều này đảm bảo khi game over (ô bị disable), nó vẫn hiện màu đỏ
                 cell_widget.config(
                     bg=error_color, 
                     disabledbackground=error_color, 
                     readonlybackground=error_color
                 )
             except Exception as e:
-                self.log(f"Error highlighting cell {coord}: {e}") # Tùy chọn: log
+                self.log(f"Error highlighting cell {coord}: {e}") 
 
     def log(self, message):
-        """Hàm helper để log (gọi hàm add_chat_message)"""
-        # Bạn có thể dùng hàm này nếu muốn, hoặc gọi thẳng self.client.ui.add_chat_message
         self.add_chat_message(f"[Debug]: {message}")
 
     # ------------------- Chat -------------------
     def add_chat_message(self, msg):
-        self.chat_area.config(state=tk.NORMAL)
-        self.chat_area.insert(tk.END, msg + "\n")
-        self.chat_area.see(tk.END)
-        self.chat_area.config(state=tk.DISABLED)
+        if hasattr(self, 'chat_area'):
+            self.chat_area.config(state=tk.NORMAL)
+            self.chat_area.insert(tk.END, msg + "\n")
+            self.chat_area.see(tk.END)
+            self.chat_area.config(state=tk.DISABLED)
 
 
 # =====================================================
-# LỚP CLIENT 
+# LỚP CLIENT
 # =====================================================
 class ClientGUI:
     def __init__(self, host='127.0.0.1', port=65432):
@@ -263,11 +325,16 @@ class ClientGUI:
         self.buffer = ""
         self.challenge_pending = False
 
-        # GUI chính
         self.window = tk.Tk()
+        self.window.title("Sudoku Multiplayer") 
+        self.window.geometry("900x700") 
         self.window.configure(bg="#f4ede4")
 
-        # Khung kết nối
+        self.user_listbox = None
+        self.btn_challenge = None
+        self.btn_history = None
+        self.btn_submit = None
+
         connect_frame = tk.Frame(self.window, bg="#f4ede4")
         tk.Label(connect_frame, text="IP:", bg="#f4ede4").pack(side=tk.LEFT)
         self.entry_ip = tk.Entry(connect_frame, width=12)
@@ -283,26 +350,8 @@ class ClientGUI:
         self.btn_disconnect = tk.Button(connect_frame, text="Ngắt", bg="#b97a57", fg="white",
                                         command=self.disconnect, state=tk.DISABLED)
         self.btn_disconnect.pack(side=tk.LEFT)
-        connect_frame.pack(pady=5)
+        connect_frame.pack(side=tk.TOP, pady=5, fill=tk.X, padx=10)
 
-        # Danh sách người dùng
-        user_frame = tk.Frame(self.window, bg="#f4ede4")
-        self.user_listbox = tk.Listbox(user_frame, height=5)
-        self.user_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        self.btn_challenge = tk.Button(user_frame, text="Thách đấu", bg="#b97a57", fg="white",
-                                       command=self.challenge_player, state=tk.DISABLED)
-        self.btn_challenge.pack(side=tk.RIGHT, padx=5)
-        # self.btn_submit = tk.Button(user_frame, text="Hoàn thành", bg="#28a745", fg="white",
-        #                               command=self.submit_solution, state=tk.DISABLED)
-        # self.btn_submit.pack(side=tk.RIGHT, padx=5)
-        
-        self.btn_history = tk.Button(user_frame, text="Lịch sử", bg="#6c757d", fg="white",
-                                     command=self.request_history, state=tk.DISABLED)
-        self.btn_history.pack(side=tk.RIGHT, padx=5)
-
-        user_frame.pack(pady=5, fill=tk.X)
-
-        # Khung Sudoku UI
         self.ui = SudokuUI(self.window, self)
 
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -323,17 +372,21 @@ class ClientGUI:
             self.listen_thread.start()
             self.btn_connect.config(state=tk.DISABLED)
             self.btn_disconnect.config(state=tk.NORMAL)
-            self.btn_challenge.config(state=tk.NORMAL)
-            self.btn_history.config(state=tk.NORMAL)
+            
+            if self.btn_challenge:
+                self.btn_challenge.config(state=tk.NORMAL)
+            if self.btn_history:
+                self.btn_history.config(state=tk.NORMAL)
+
             self.ui.add_chat_message(f" Kết nối thành công với tên: {self.username}")
         except Exception as e:
             messagebox.showerror("Lỗi", f"Không thể kết nối: {e}")
 
     def disconnect(self):
         if not self.connected: 
-            return # Nếu đã ngắt rồi thì thoát luôn, không in log, không xử lý lại
+            return 
         
-        self.connected = False # Đặt cờ ngay lập tức
+        self.connected = False 
 
         if self.sock:
             try:
@@ -343,9 +396,14 @@ class ClientGUI:
         self.sock = None
         self.btn_connect.config(state=tk.NORMAL)
         self.btn_disconnect.config(state=tk.DISABLED)
-        self.btn_challenge.config(state=tk.DISABLED)
-        self.btn_history.config(state=tk.DISABLED)
-        self.user_listbox.delete(0, tk.END)
+        
+        if self.btn_challenge:
+            self.btn_challenge.config(state=tk.DISABLED)
+        if self.btn_history:
+            self.btn_history.config(state=tk.DISABLED)
+        if self.user_listbox:
+            self.user_listbox.delete(0, tk.END)
+            
         self.current_game_id = None 
         self.challenge_pending = False
         self.opponent = None
@@ -360,50 +418,36 @@ class ClientGUI:
                 self.disconnect()
 
     def listen_to_server(self):
-        # Bộ giải mã JSON, dùng để đọc từng object một
         decoder = json.JSONDecoder()
         
         while self.connected:
             try:
-                # 1. Nhận dữ liệu và thêm vào buffer
                 data = self.sock.recv(4096).decode('utf-8')
                 if not data:
-                    break # Server ngắt kết nối
+                    break 
                 
                 self.buffer += data
                 
-                # 2. Xử lý tất cả các tin nhắn hoàn chỉnh có trong buffer
                 while self.buffer:
                     try:
-                        # 3. Dùng raw_decode để tìm 1 JSON object hoàn chỉnh
-                        # Nó trả về (object, vị trí kết thúc)
                         msg, idx = decoder.raw_decode(self.buffer)
-                        
-                        # 4. Xử lý tin nhắn
                         self.window.after(0, self.handle_server_message, msg)
-                        
-                        # 5. Cắt bỏ tin nhắn đã xử lý khỏi buffer
-                        # lstrip() để xóa khoảng trắng (nếu có)
                         self.buffer = self.buffer[idx:].lstrip()
                         
                     except json.JSONDecodeError:
-                        # Nếu buffer không chứa 1 JSON hoàn chỉnh (ví dụ: bị cắt giữa chừng)
-                        # thì break vòng lặp 'while self.buffer'
-                        # và quay lại chờ recv() thêm dữ liệu
                         break
             
             except Exception as e:
-                # Nếu có lỗi nghiêm trọng (ví dụ: mất kết nối)
-                if self.connected: # Chỉ log nếu chúng ta không chủ động ngắt
+                if self.connected: 
                     self.ui.add_chat_message(f"Lỗi kết nối: {e}")
                 break
                 
-        # Chỉ gọi disconnect nếu vòng lặp bị phá vỡ
         self.disconnect()
 
     def handle_server_message(self, message):
         action = message.get("action")
-        if action == "user_list":
+        
+        if action == "user_list" and self.user_listbox:
             self.user_listbox.delete(0, tk.END)
             for u in message.get("users", []):
                 if u != self.username:
@@ -414,7 +458,7 @@ class ClientGUI:
             accept = messagebox.askyesno("Thách đấu", f"{challenger} thách đấu bạn! Chấp nhận?")
             resp = {"action": "challenge_response", "opponent": challenger, "accept": accept}
             self.send_message(resp)
-            if accept:
+            if accept and self.btn_challenge:
                 self.btn_challenge.config(state=tk.DISABLED)
                 self.challenge_pending = False
 
@@ -424,7 +468,8 @@ class ClientGUI:
             puzzle = message.get("puzzle")
             self.ui.display_puzzle(puzzle)
             self.ui.add_chat_message(f" Game bắt đầu với {self.opponent}")
-            self.btn_challenge.config(state=tk.DISABLED)
+            if self.btn_challenge:
+                self.btn_challenge.config(state=tk.DISABLED)
             self.challenge_pending = False
 
         elif action == "move":
@@ -448,7 +493,7 @@ class ClientGUI:
 
         elif action == "game_over":
             winner = message.get("winner")
-            error_list = message.get("errors", []) # LẤY DANH SÁCH LỖI
+            error_list = message.get("errors", []) 
 
             if error_list:
                 self.ui.highlight_errors(error_list)
@@ -460,14 +505,14 @@ class ClientGUI:
 
             self.current_game_id = None
             self.opponent = None
-            if self.connected:
+            if self.connected and self.btn_challenge:
                 self.btn_challenge.config(state=tk.NORMAL)
             self.challenge_pending = False
 
         elif action == "challenge_declined":
             decliner = message.get("opponent")
             self.ui.add_chat_message(f"❌ {decliner} đã từ chối lời thách đấu.")
-            if self.connected and not self.current_game_id:
+            if self.connected and not self.current_game_id and self.btn_challenge:
                 self.btn_challenge.config(state=tk.NORMAL)
             self.challenge_pending = False
 
@@ -475,17 +520,16 @@ class ClientGUI:
             time_remaining = message.get("time")
             should_wait = message.get("wait", True)
             
-            # KHÓA BÀN CỜ NGAY LẬP TỨC KHI SERVER BÁO ĐÃ NỘP (HOẶC HẾT GIỜ)
             self.ui.disable_all() 
             
             if should_wait:
-                # Nếu hết giờ, time_remaining sẽ là 0 hoặc số âm
                 if time_remaining <= 0:
                     messagebox.showwarning("Hết giờ!", "Bạn đã hết thời gian! Bài làm đã được thu tự động.")
                 else:
                     messagebox.showinfo("Đã nộp!", f"Bạn đã nộp bài! Đang chờ đối thủ...")
             
-            self.btn_submit.config(state=tk.DISABLED)
+            if self.btn_submit:
+                self.btn_submit.config(state=tk.DISABLED)
 
         elif action == "opponent_finished":
             self.ui.add_chat_message(f" {message.get('name')} đã hoàn thành Sudoku!")
@@ -497,19 +541,17 @@ class ClientGUI:
 
     def show_history_popup(self, history_data):
         """Hiển thị cửa sổ popup chứa bảng lịch sử"""
-        import time # Import time để xử lý ngày tháng
+        import time 
         
         top = tk.Toplevel(self.window)
         top.title(f"Lịch sử đấu của {self.username}")
         top.geometry("600x400")
         top.configure(bg="#f4ede4")
 
-        # Sử dụng Treeview để làm bảng
         from tkinter import ttk
         columns = ("time", "opponent", "result", "duration")
         tree = ttk.Treeview(top, columns=columns, show="headings", height=15)
         
-        # Định nghĩa cột
         tree.heading("time", text="Thời gian")
         tree.heading("opponent", text="Đối thủ")
         tree.heading("result", text="Kết quả")
@@ -522,13 +564,10 @@ class ClientGUI:
         
         tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Đổ dữ liệu
         for match in history_data:
-            # 1. Xử lý thời gian
             end_time = match.get("end_time", 0)
             date_str = time.strftime('%Y-%m-%d %H:%M', time.localtime(end_time))
             
-            # 2. Xác định đối thủ và kết quả
             p1 = match.get("player1")
             p2 = match.get("player2")
             winner = match.get("winner")
@@ -545,14 +584,11 @@ class ClientGUI:
             else:
                 res = "THUA"
             
-            # 3. Thời lượng
             duration = match.get("duration", 0)
             dur_str = f"{int(duration)}s"
             
-            # Thêm vào bảng (thêm tag màu sắc nếu muốn)
             tree.insert("", tk.END, values=(date_str, opponent, res, dur_str))
 
-        # Nút đóng
         tk.Button(top, text="Đóng", command=top.destroy).pack(pady=5)
 
     def submit_solution(self):
@@ -566,12 +602,14 @@ class ClientGUI:
         self.ui.add_chat_message("Đã nộp bài! Đang chờ đối thủ...")
         self.send_message({"action": "submit_solution"})
         
-        # Khóa bàn cờ lại
         self.ui.disable_all()
-        self.btn_submit.config(state=tk.DISABLED)
+        if self.btn_submit:
+            self.btn_submit.config(state=tk.DISABLED)
 
     # ------------------- Hành động người chơi -------------------
     def challenge_player(self):
+        if not self.user_listbox: return
+        
         sel = self.user_listbox.curselection()
         if self.current_game_id:
             messagebox.showinfo("Thách đấu", "Bạn đang trong trận đấu hiện tại.")
@@ -586,10 +624,13 @@ class ClientGUI:
         msg = {"action": "challenge", "opponent": opp}
         self.send_message(msg)
         self.ui.add_chat_message(f"📤 Đã gửi lời mời thách đấu tới {opp}")
-        self.btn_challenge.config(state=tk.DISABLED)
+        if self.btn_challenge:
+            self.btn_challenge.config(state=tk.DISABLED)
         self.challenge_pending = True
 
     def send_chat(self):
+        if not hasattr(self.ui, 'chat_entry'): return 
+            
         text = self.ui.chat_entry.get()
         if not text:
             return

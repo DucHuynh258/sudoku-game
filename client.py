@@ -455,6 +455,10 @@ class ClientGUI:
 
         elif action == "challenge_request":
             challenger = message.get("from")
+            # Nếu mình đang chơi game mà vẫn nhận được request (do lỗi nào đó), tự động từ chối
+            if self.current_game_id:
+                self.send_message({"action": "challenge_response", "opponent": challenger, "accept": False})
+                return
             accept = messagebox.askyesno("Thách đấu", f"{challenger} thách đấu bạn! Chấp nhận?")
             resp = {"action": "challenge_response", "opponent": challenger, "accept": accept}
             self.send_message(resp)

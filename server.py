@@ -396,6 +396,13 @@ class ServerGUI:
             except OSError:
                 break # Socket đã đóng
 
+    def is_user_busy(self, username):
+        """Kiểm tra xem user có đang trong trận đấu nào không"""
+        for game in self.active_games.values():
+            if game.player1["name"] == username or game.player2["name"] == username:
+                return True
+        return False
+
     def handle_client(self, conn, addr):
         username = None
         try:
@@ -431,10 +438,32 @@ class ServerGUI:
                 elif action == "challenge":
                     opponent_name = message.get("opponent")
                     opponent_conn = self.clients.get(opponent_name)
+                    
+                    # 1. Kiểm tra xem chính người thách đấu (username) có đang bận không?
+                    # (Phòng trường hợp Client bị hack gửi lệnh khi đang chơi)
+                    if self.is_user_busy(username):
+                        self.send_to_client(conn, {"action": "chat_message", "from": "Server", "message": "Bạn đang trong trận đấu, không thể thách đấu người khác!"})
+                        # Gửi challenge_declined để Client reset nút "Thách đấu" về trạng thái active
+                        self.send_to_client(conn, {"action": "challenge_declined", "opponent": opponent_name})
+                        continue
+
                     if opponent_conn:
-                        # Gửi lời mời thách đấu cho đối thủ
-                        fwd_msg = {"action": "challenge_request", "from": username}
-                        self.send_to_client(opponent_conn, fwd_msg)
+                        # 2. KIỂM TRA QUAN TRỌNG: Đối thủ có đang bận không?
+                        if self.is_user_busy(opponent_name):
+                            # Nếu đối thủ bận, báo ngay cho người thách đấu biết
+                            msg = f"Người chơi {opponent_name} đang trong trận đấu khác."
+                            self.send_to_client(conn, {"action": "chat_message", "from": "Server", "message": msg})
+                            
+                            # Gửi tín hiệu từ chối để Client của người thách đấu mở lại nút bấm
+                            self.send_to_client(conn, {"action": "challenge_declined", "opponent": opponent_name})
+                        else:
+                            # Nếu rảnh thì mới gửi lời mời
+                            fwd_msg = {"action": "challenge_request", "from": username}
+                            self.send_to_client(opponent_conn, fwd_msg)
+                    else:
+                        # Trường hợp đối thủ đã offline đột ngột
+                        self.send_to_client(conn, {"action": "chat_message", "from": "Server", "message": "Người chơi không còn trực tuyến."})
+                        self.send_to_client(conn, {"action": "challenge_declined", "opponent": opponent_name})
                     
                 # ... bên trong hàm handle_client ...
                 

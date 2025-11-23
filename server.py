@@ -29,7 +29,8 @@ class GameSession(threading.Thread):
             "finish_time_remaining": 0,# Thời gian còn lại khi hoàn thành
             "submission_board": None, 
             "incorrect_cells": 99, 
-            "error_list": [] 
+            "error_list": [] ,
+            "correct_list": []  # Danh sách ô đúng P1
         }
         self.player2 = {
             "name": p2_name, 
@@ -40,7 +41,8 @@ class GameSession(threading.Thread):
             "finish_time_remaining": 0,
             "submission_board": None, 
             "incorrect_cells": 99,
-            "error_list": []   
+            "error_list": []   ,
+            "correct_list": []  #  Danh sách ô đúng P2
         }
         
         # Đề bài gốc, không thay đổi
@@ -160,6 +162,21 @@ class GameSession(threading.Thread):
                     if submission_board[r][c] != self.solution[r][c]:
                         error_list.append([r, c]) 
         return error_list
+    
+    def calculate_corrects(self, submission_board):
+        """THÊM MỚI: Trả về danh sách các ô đúng (chỉ kiểm tra ô cần điền)"""
+        correct_list = []
+        if submission_board is None: 
+            return correct_list  # Không có bài nộp thì không có ô đúng
+        
+        for r in range(9):
+            for c in range(9):
+                # Chỉ kiểm tra những ô cần điền
+                if self.puzzle_board[r][c] is None:
+                    # Nếu điền đúng (không None và khớp lời giải)
+                    if submission_board[r][c] == self.solution[r][c] and submission_board[r][c] is not None:
+                        correct_list.append([r, c]) 
+        return correct_list
 
     def score_and_end_game(self):
         """Chấm điểm và quyết định người thắng"""
@@ -167,6 +184,10 @@ class GameSession(threading.Thread):
         p1_error_list = self.calculate_errors(self.player1["submission_board"])
         p2_error_list = self.calculate_errors(self.player2["submission_board"])
         
+        # LẤY VỀ DANH SÁCH Ô ĐÚNG
+        p1_correct_list = self.calculate_corrects(self.player1["submission_board"])
+        p2_correct_list = self.calculate_corrects(self.player2["submission_board"])
+
         # LẤY SỐ LƯỢNG LỖI TỪ LIST
         p1_errors = len(p1_error_list)
         p2_errors = len(p2_error_list)
@@ -176,6 +197,8 @@ class GameSession(threading.Thread):
         self.player2["incorrect_cells"] = p2_errors
         self.player1["error_list"] = p1_error_list
         self.player2["error_list"] = p2_error_list
+        self.player1["correct_list"] = p1_correct_list
+        self.player2["correct_list"] = p2_correct_list
 
         self.log(f"Game {self.game_id} scoring. P1 Errors: {p1_errors} | P2 Errors: {p2_errors}")
 
@@ -650,6 +673,7 @@ class ServerGUI:
                         "action": "game_over", 
                         "winner": winner,
                         "errors": [], # Đối thủ thoát thì không cần hiện lỗi
+                        "corrects": [],  # Không cần hiện đúng
                         "message": "Đối thủ đã thoát! Bạn thắng."
                     }
                     self.send_to_client(remaining_player_conn, msg)
@@ -663,6 +687,7 @@ class ServerGUI:
                     "action": "game_over",
                     "winner": winner,
                     "errors": game.player1["error_list"], # <--- Lấy list lỗi của P1
+                    "corrects": game.player1["correct_list"], # <--- Lấy list ô đúng của P1
                     "message": f"Kết thúc! Người thắng: {winner}"
                 }
                 self.send_to_client(game.player1["conn"], msg1)
@@ -672,6 +697,7 @@ class ServerGUI:
                     "action": "game_over",
                     "winner": winner,
                     "errors": game.player2["error_list"], # <--- Lấy list lỗi của P2
+                    "corrects": game.player2["correct_list"], # <--- Lấy list ô đúng của P2
                     "message": f"Kết thúc! Người thắng: {winner}"
                 }
                 self.send_to_client(game.player2["conn"], msg2)

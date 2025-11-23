@@ -314,6 +314,25 @@ class SudokuUI:
             except Exception as e:
                 self.log(f"Error highlighting cell {coord}: {e}") 
 
+    def highlight_corrects(self, correct_list):
+        """THÊM MỚI: Nhận 1 list tọa độ [[r, c], ...] và tô màu xanh các ô đó"""
+        correct_color = "#28a745"  # Xanh lá
+    
+        self.log(f"Highlighting {len(correct_list)} corrects.") 
+    
+        for coord in correct_list:
+            try:
+                r, c = coord
+                cell_widget = self.cells[r][c]
+                
+                cell_widget.config(
+                    bg=correct_color, 
+                    disabledbackground=correct_color, 
+                    readonlybackground=correct_color
+                )
+            except Exception as e:
+                self.log(f"Error highlighting correct cell {coord}: {e}") 
+
     def log(self, message):
         self.add_chat_message(f"[Debug]: {message}")
 
@@ -515,9 +534,12 @@ class ClientGUI:
         elif action == "game_over":
             winner = message.get("winner")
             error_list = message.get("errors", []) 
+            correct_list = message.get("corrects", [])  # THÊM MỚI: Nhận list đúng
 
             if error_list:
                 self.ui.highlight_errors(error_list)
+            if correct_list:
+                self.ui.highlight_corrects(correct_list)  # THÊM MỚI: Tô màu các ô đúng
 
             self.window.update_idletasks()
 

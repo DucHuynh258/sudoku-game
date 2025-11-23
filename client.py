@@ -6,7 +6,7 @@ from tkinter import simpledialog, messagebox, scrolledtext
 
 
 # =====================================================
-# LỚP GIAO DIỆN SUDOKU 
+# LỚP GIAO DIỆN SUDOKU 
 # =====================================================
 class SudokuUI:
     def __init__(self, window, client):
@@ -18,7 +18,7 @@ class SudokuUI:
 
     def build_ui(self):
         # ===============================================
-        # DÙNG PANEDWINDOW (Cửa sổ 2 ngăn)
+        # DÙNG PANEDWINDOW 
         # ===============================================
         
         main_pane = tk.PanedWindow(
@@ -111,11 +111,11 @@ class SudokuUI:
         self.client.user_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         self.client.btn_challenge = tk.Button(user_frame, text="Thách đấu", bg="#b97a57", fg="white",
-                                       command=self.client.challenge_player, state=tk.DISABLED)
+                                             command=self.client.challenge_player, state=tk.DISABLED)
         self.client.btn_challenge.pack(side=tk.RIGHT, padx=5)
         
         self.client.btn_history = tk.Button(user_frame, text="Lịch sử", bg="#6c757d", fg="white",
-                                     command=self.client.request_history, state=tk.DISABLED)
+                                           command=self.client.request_history, state=tk.DISABLED)
         self.client.btn_history.pack(side=tk.RIGHT, padx=5)
 
         # --- 2. KHUNG CHAT (Ở dưới) ---
@@ -131,26 +131,36 @@ class SudokuUI:
         chat_label.pack(side=tk.TOP, pady=(5, 0)) 
         
         
-        # 🌟🌟🌟 SỬA LỖI TẠI ĐÂY 🌟🌟🌟
+        # 🌟🌟🌟 START SỬA CODE TẠI ĐÂY (Thêm nút Gửi) 🌟🌟🌟
         
-        # --- FRAME BAO Ô NHẬP CHAT (giúp có padding đẹp) ---
-        # FIX: Đã sửa lỗi thụt lề
-        entry_frame = tk.Frame(chat_container, bg="#f4ede4")
-        entry_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 12), padx=8)
+        # --- FRAME BAO Ô NHẬP CHAT (Bao gồm Entry và Button) ---
+        entry_container = tk.Frame(chat_container, bg="#f4ede4")
+        entry_container.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 12), padx=15)
 
-        # --- Ô NHẬP CHAT TO HƠN ---
-        # FIX: Đã sửa lỗi thụt lề
+        # --- Ô NHẬP CHAT ---
         self.chat_entry = tk.Entry(
-            entry_frame,
-            font=('Arial', 14),           # chữ lớn hơn
+            entry_container,
+            font=('Arial', 12),
             bg="#f8e9d2",
             relief="solid",
             borderwidth=2,
         )
-        # tăng chiều cao + khoảng thở
-        self.chat_entry.pack(fill=tk.X, ipady=30)
-        # FIX: Đã XÓA dòng bind bị lặp
+        # Đặt Entry sang bên trái, cho phép giãn nở để chiếm không gian
+        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=25, padx=(0, 5))
         self.chat_entry.bind("<Return>", lambda e: self.client.send_chat())
+
+        # --- NÚT GỬI ---
+        btn_send = tk.Button(
+            entry_container,
+            text="Gửi",
+            font=("Arial", 12, "bold"),
+            bg="#9C8057", 
+            fg="white",
+            command=self.client.send_chat, # Gọi hàm gửi chat
+            width=5,
+            height=2 # Chiều cao tương đối với ipady=8 của Entry
+        )
+        btn_send.pack(side=tk.RIGHT)
 
         # TẠO VÀ PACK Ô HIỂN THỊ CHAT VÀO GIỮA SAU
         self.chat_area = scrolledtext.ScrolledText(
@@ -159,10 +169,9 @@ class SudokuUI:
             bg="#fff9f4", fg="#2c2c2c", wrap="word", relief="solid"
         )
         # 3. Pack ô chat vào phần CÒN LẠI (ở giữa)
-        # Nó sẽ fill vào không gian giữa label và entry
+        # Nó sẽ fill vào không gian giữa label và entry_container
         self.chat_area.pack(side=tk.TOP, pady=5, fill=tk.BOTH, expand=True) 
-        # 🌟🌟🌟 KẾT THÚC SỬA LỖI 🌟🌟🌟
-
+        # 🌟🌟🌟 KẾT THÚC SỬA CODE TẠI ĐÂY 🌟🌟🌟
         
     def handle_keypress(self, event):
         """Xử lý di chuyển mũi tên và tự động xóa số cũ khi nhập số mới"""
@@ -266,10 +275,18 @@ class SudokuUI:
         try:
             r, c = cell
             widget = self.cells[r][c]
-            widget.config(state="normal")
-            widget.delete(0, tk.END)
-            widget.insert(0, str(value))
-            widget.config(state="readonly", fg="red", readonlybackground=widget.cget('bg'))
+            # Chỉ cập nhật ô nếu nó không phải là ô cố định
+            # Logic này đã đúng, chỉ cần đảm bảo nó không thay đổi ô cố định của mình
+            if widget.cget('state') != 'readonly' and widget.get() not in "123456789":
+                widget.config(state="normal")
+                widget.delete(0, tk.END)
+                if value != 0:
+                     widget.insert(0, str(value))
+                     widget.config(state="readonly", fg="red", readonlybackground=widget.cget('bg'))
+                else:
+                    # Nếu giá trị là 0, tức là xóa
+                    widget.config(state="normal", fg="black")
+                    
         except Exception as e:
             self.add_chat_message(f"Lỗi cập nhật ô: {e}")
 

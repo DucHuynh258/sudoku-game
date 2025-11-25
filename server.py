@@ -19,6 +19,7 @@ class GameSession(threading.Thread):
         self.server = server_instance
         self.game_id = game_id
         self.solution = solution_board
+        self.start_time = time.time()
         
         self.player1 = {
             "name": p1_name, 
@@ -705,7 +706,7 @@ class ServerGUI:
                         "player2": game.player2["name"],
                         "winner": winner,
                         "end_time": time.time(),
-                        "duration": (300 - game.player1["time"]) 
+                        "duration": (time.time() - game.start_time)
                     }
                     self.save_match_to_db(game_data)
                 except Exception as e:

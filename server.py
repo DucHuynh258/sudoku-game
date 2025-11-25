@@ -314,7 +314,7 @@ class ServerGUI:
         self.clients = {} 
         # Danh sách game đang chạy: {game_id: GameSession}
         self.active_games = {} 
-
+        self.last_heartbeat = {}
         self.log_queue = queue.Queue()
         # Kết nối MongoDB
         try:
@@ -386,6 +386,9 @@ class ServerGUI:
         self.accept_thread = threading.Thread(target=self.accept_connections, daemon=True)
         self.accept_thread.start()
 
+        self.heartbeat_thread = threading.Thread(target=self.heartbeat_monitor, daemon=True)
+        self.heartbeat_thread.start()
+
     def stop_server(self):
         self.running = False
         if self.server_socket:
@@ -426,6 +429,45 @@ class ServerGUI:
                 return True
         return False
 
+    def heartbeat_monitor(self):
+        """
+        Chạy mỗi 5s để gửi Ping và kiểm tra Timeout.
+        Timeout được thiết lập là 15s.
+        """
+        while self.running:
+            time.sleep(5) # Nghỉ 5 giây giữa các lần quét
+            
+            current_time = time.time()
+            timeout_limit = 15 # Giây
+            
+            # QUAN TRỌNG: Phải dùng list(...) để tạo bản sao danh sách keys
+            # vì self.clients có thể bị thay đổi bởi luồng khác (ngắt kết nối) khi đang lặp
+            users_snapshot = list(self.clients.keys())
+            
+            for user in users_snapshot:
+                last_seen = self.last_heartbeat.get(user, current_time)
+                
+                # 1. Kiểm tra xem đã "chết" chưa
+                if current_time - last_seen > timeout_limit:
+                    self.log(f"💀 Heartbeat Timeout: {user} has not responded in {timeout_limit}s.")
+                    
+                    # Tìm socket để đóng (nếu còn)
+                    conn = self.clients.get(user)
+                    if conn:
+                        try:
+                            conn.close() # Việc này sẽ kích hoạt Exception ở luồng handle_client -> Tự dọn dẹp
+                        except:
+                            pass
+                    
+                    # (Optional) Nếu muốn chắc chắn dọn dẹp ngay lập tức:
+                    # self.force_disconnect_user(user) 
+                    
+                else:
+                    # 2. Nếu chưa chết, gửi Ping thăm dò
+                    conn = self.clients.get(user)
+                    if conn:
+                        self.send_to_client(conn, {"action": "ping"})
+
     def handle_client(self, conn, addr):
         username = None
         try:
@@ -444,9 +486,13 @@ class ServerGUI:
                     message = json.loads(data.decode('utf-8'))
                 except json.JSONDecodeError:
                     continue # Bỏ qua gói tin lỗi
-                self.log(f"Received from {addr}: {message}")
 
                 action = message.get("action")
+
+                if username: # Chỉ theo dõi khi đã đăng nhập
+                    self.last_heartbeat[username] = time.time()
+                if action != "pong":
+                    self.log(f"Received from {addr}: {message}")
 
                 if action == "connect":
                     username = message.get("username")
@@ -455,6 +501,7 @@ class ServerGUI:
                         pass 
                     else:
                         self.clients[username] = conn
+                        self.last_heartbeat[username] = time.time()
                         self.update_client_listbox()
                         self.broadcast_user_list()
 
@@ -601,6 +648,9 @@ class ServerGUI:
                         
                     except Exception as e:
                         self.log(f"Error fetching history: {e}")
+                
+                if action == "pong":
+                    continue
 
         except Exception as e:
             self.log(f"Unexpected error with {addr}: {e}")
@@ -610,13 +660,17 @@ class ServerGUI:
             self.log(f"Cleaning up connection for {username} ({addr})")
             
             if username:
-                # 1. Xóa khỏi danh sách client online
+                #  Xóa khỏi danh sách heartbeat
+                if username in self.last_heartbeat:
+                    del self.last_heartbeat[username]
+
+                # Xóa khỏi danh sách client online
                 if username in self.clients:
                     del self.clients[username]
                     self.update_client_listbox()
                     self.broadcast_user_list()
                 
-                # 2. TÌM VÀ HỦY GAME NGAY LẬP TỨC
+                # TÌM VÀ HỦY GAME NGAY LẬP TỨC
                 # Dùng list() để tạo bản sao keys vì ta sẽ thay đổi dictionary trong loop
                 game_ids = list(self.active_games.keys())
                 for game_id in game_ids:

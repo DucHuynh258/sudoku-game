@@ -577,6 +577,10 @@ class ClientGUI:
         elif action == "opponent_finished":
             self.ui.add_chat_message(f" {message.get('name')} đã hoàn thành Sudoku!")
 
+        elif action == "ping":
+            # Server kiểm tra kết nối, phản hồi lại ngay lập tức
+            self.send_message({"action": "pong"})
+
     def request_history(self):
         """Gửi yêu cầu lấy lịch sử đấu"""
         if self.connected:

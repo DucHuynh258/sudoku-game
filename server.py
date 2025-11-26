@@ -498,8 +498,17 @@ class ServerGUI:
                 if action == "connect":
                     username = message.get("username")
                     if username in self.clients:
-                        # Gửi lỗi: Tên đã tồn tại
-                        pass 
+                        # Gửi thông báo lỗi về cho Client
+                        error_msg = {
+                            "action": "connection_error", 
+                            "message": f"Tên '{username}' đã có người sử dụng! Vui lòng chọn tên khác."
+                        }
+                        self.send_to_client(conn, error_msg)
+                        
+                        # Ngắt vòng lặp để đóng kết nối socket này ngay lập tức
+                        # (Nó sẽ nhảy xuống khối finally để dọn dẹp)
+                        username = None # Đặt lại None để không xóa nhầm user cũ đang online trong khối finally
+                        break
                     else:
                         self.clients[username] = conn
                         self.last_heartbeat[username] = time.time()

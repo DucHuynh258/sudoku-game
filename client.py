@@ -438,7 +438,8 @@ class ClientGUI:
                         self.btn_challenge.config(state=tk.NORMAL)
                     if self.btn_history:
                         self.btn_history.config(state=tk.NORMAL)
-                    self.ui.add_chat_message(f" Kết nối thành công với tên: {self.username}")
+                    # self.ui.add_chat_message(f" Kết nối thành công với tên: {self.username}")
+                    self.waiting_for_login = True # Đặt cờ đánh dấu đang chờ server xác nhận
                 self.window.after(0, _on_ok)
             except Exception as e:
                 def _on_fail():
@@ -512,7 +513,17 @@ class ClientGUI:
     def handle_server_message(self, message):
         action = message.get("action")
         
+        if action == "connection_error":
+            error_content = message.get("message")
+            messagebox.showerror("Lỗi Đăng Nhập", error_content)
+            self.disconnect() # Tự động ngắt kết nối để reset giao diện
+            return
+
         if action == "user_list" and self.user_listbox:
+            # Kiểm tra nếu đang chờ đăng nhập thì mới thông báo thành công
+            if getattr(self, 'waiting_for_login', False):
+                self.ui.add_chat_message(f"Kết nối thành công với tên: {self.username}")
+                self.waiting_for_login = False # Tắt cờ để không in lại khi user list cập nhật
             self.user_listbox.delete(0, tk.END)
             for u in message.get("users", []):
                 if u != self.username:

@@ -417,18 +417,23 @@ class ClientGUI:
         self.username = simpledialog.askstring("Username", "Nhập tên người chơi:")
         if not self.username:
             return
+
+        # Disable connect button while attempting to connect so user can't spam
         self.btn_connect.config(state=tk.DISABLED)
         self.ui.add_chat_message("Đang kết nối...")
+
         def _connect_thread():
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(5)
-                sock.connect((ip_str if ip_str.lower() != "localhost" else "127.0.0.1", port_val))
+                # Use create_connection which supports a connect timeout
+                target = (ip_str if ip_str.lower() != "localhost" else "127.0.0.1", port_val)
+                sock = socket.create_connection(target, timeout=5)
+                # Connected successfully
                 sock.settimeout(None)
                 self.sock = sock
                 self.host = ip_str
                 self.port = port_val
                 self.connected = True
+
                 def _on_ok():
                     self.send_message({"action": "connect", "username": self.username})
                     self.listen_thread = threading.Thread(target=self.listen_to_server, daemon=True)
@@ -438,14 +443,26 @@ class ClientGUI:
                         self.btn_challenge.config(state=tk.NORMAL)
                     if self.btn_history:
                         self.btn_history.config(state=tk.NORMAL)
-                    # self.ui.add_chat_message(f" Kết nối thành công với tên: {self.username}")
-                    self.waiting_for_login = True # Đặt cờ đánh dấu đang chờ server xác nhận
+                    self.waiting_for_login = True
+                    self.ui.add_chat_message(f"Kết nối thành công với tên: {self.username}")
+
                 self.window.after(0, _on_ok)
-            except Exception as e:
+
+            except (ConnectionRefusedError, TimeoutError, OSError, socket.timeout) as e:
+                # Server chưa bật / không phản hồi
                 def _on_fail():
                     self.btn_connect.config(state=tk.NORMAL)
-                    messagebox.showerror("Lỗi", f"Không thể kết nối: {e}")
+                    self.ui.add_chat_message("Kết nối thất bại: Không thể liên lạc với server. Hãy thử lại sau.")
+                    messagebox.showerror("Lỗi kết nối", f"Không thể kết nối tới server: {e}")
                 self.window.after(0, _on_fail)
+
+            except Exception as e:
+                def _on_fail_generic():
+                    self.btn_connect.config(state=tk.NORMAL)
+                    self.ui.add_chat_message(f"Lỗi khi kết nối: {e}")
+                    messagebox.showerror("Lỗi", f"Không thể kết nối: {e}")
+                self.window.after(0, _on_fail_generic)
+
         threading.Thread(target=_connect_thread, daemon=True).start()
 
     def disconnect(self):

@@ -444,7 +444,6 @@ class ClientGUI:
                     if self.btn_history:
                         self.btn_history.config(state=tk.NORMAL)
                     self.waiting_for_login = True
-                    self.ui.add_chat_message(f"Kết nối thành công với tên: {self.username}")
 
                 self.window.after(0, _on_ok)
 

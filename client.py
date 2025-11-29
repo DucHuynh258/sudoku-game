@@ -131,8 +131,6 @@ class SudokuUI:
         chat_label.pack(side=tk.TOP, pady=(5, 0)) 
         
         
-        # 🌟🌟🌟 START SỬA CODE TẠI ĐÂY (Thêm nút Gửi) 🌟🌟🌟
-        
         # --- FRAME BAO Ô NHẬP CHAT (Bao gồm Entry và Button) ---
         entry_container = tk.Frame(chat_container, bg="#f4ede4")
         entry_container.pack(side=tk.BOTTOM, fill=tk.X, pady=(8, 12), padx=15)
@@ -171,7 +169,6 @@ class SudokuUI:
         # 3. Pack ô chat vào phần CÒN LẠI (ở giữa)
         # Nó sẽ fill vào không gian giữa label và entry_container
         self.chat_area.pack(side=tk.TOP, pady=5, fill=tk.BOTH, expand=True) 
-        # 🌟🌟🌟 KẾT THÚC SỬA CODE TẠI ĐÂY 🌟🌟🌟
         
     def handle_keypress(self, event):
         """Xử lý di chuyển mũi tên và tự động xóa số cũ khi nhập số mới"""
@@ -315,7 +312,7 @@ class SudokuUI:
                 self.log(f"Error highlighting cell {coord}: {e}") 
 
     def highlight_corrects(self, correct_list):
-        """THÊM MỚI: Nhận 1 list tọa độ [[r, c], ...] và tô màu xanh các ô đó"""
+        """Nhận 1 list tọa độ [[r, c], ...] và tô màu xanh các ô đó"""
         correct_color = "#28a745"  # Xanh lá
     
         self.log(f"Highlighting {len(correct_list)} corrects.") 

@@ -10,9 +10,6 @@ from tkinter import scrolledtext
 from pymongo import MongoClient # Cần 'pip install pymongo'
 from sudoku import Sudoku # cần pip install py-sudoku
 
-# Đặt lớp này sau phần import, BÊN NGOÀI lớp ServerGUI
-# Đảm bảo bạn có 'import time' ở đầu file
-
 class GameSession(threading.Thread):
     def __init__(self, server_instance, game_id, p1_conn, p1_name, p2_conn, p2_name, puzzle_board, solution_board, total_time=15*60):
         super().__init__(daemon=True)
@@ -46,13 +43,12 @@ class GameSession(threading.Thread):
             "correct_list": []  #  Danh sách ô đúng P2
         }
         
-        # Đề bài gốc, không thay đổi
         self.puzzle_board = puzzle_board
         
         self.running = True
         self.lock = threading.RLock()
         self.log(f"GameSession {game_id} (RACE MODE) created between {p1_name} and {p2_name}.")
-
+ 
     def log(self, message):
         self.server.log(message)
 
@@ -108,7 +104,7 @@ class GameSession(threading.Thread):
 
             player["finished"] = True
             player["finish_time_remaining"] = player["time"]
-            # ✅ LƯU LẠI BÀI NỘP
+            # LƯU LẠI BÀI NỘP
             player["submission_board"] = [row[:] for row in player["board"]] 
 
             self.log(f"Game {self.game_id}: {player_name} has submitted.")
@@ -165,7 +161,7 @@ class GameSession(threading.Thread):
         return error_list
     
     def calculate_corrects(self, submission_board):
-        """THÊM MỚI: Trả về danh sách các ô đúng (chỉ kiểm tra ô cần điền)"""
+        """ Trả về danh sách các ô đúng (chỉ kiểm tra ô cần điền)"""
         correct_list = []
         if submission_board is None: 
             return correct_list  # Không có bài nộp thì không có ô đúng
@@ -265,7 +261,6 @@ class GameSession(threading.Thread):
             
             # Kiểm tra luật Sudoku
             if not self.is_valid_move(player["board"], row, col, value):
-                # (Tùy chọn: bạn có thể gửi tin nhắn lỗi về client)
                 # Hoặc chỉ đơn giản là bỏ qua nước đi sai
                 self.log(f"Game {self.game_id}: {player_name} made an invalid move.")
                 # Tạm thời chúng ta cho phép đi sai để người chơi tự sửa
@@ -277,7 +272,6 @@ class GameSession(threading.Thread):
             # CHÚNG TA KHÔNG CHUYỂN TIẾP NƯỚC ĐI CHO ĐỐI THỦ
             # (self.server.send_to_client(opponent_conn, fwd_msg) -> BỊ XÓA)
 
-    # (Các hàm is_valid_move và is_board_full giữ nguyên như cũ)
     # Hàm helper kiểm tra xem nước đi có hợp lệ không
     def is_valid_move(self, board, row, col, num):
         # 1. Kiểm tra hàng
@@ -354,7 +348,6 @@ class ServerGUI:
         print(message) # Giữ lại để debug trên console
         self.log_queue.put(message) # Đưa tin nhắn vào queue
     
-    # THÊM HÀM MỚI NÀY (bên trong lớp ServerGUI)
     def poll_log_queue(self):
         try:
             # Lấy tất cả tin nhắn đang chờ trong queue
@@ -450,7 +443,7 @@ class ServerGUI:
                 
                 # 1. Kiểm tra xem đã "chết" chưa
                 if current_time - last_seen > timeout_limit:
-                    self.log(f"💀 Heartbeat Timeout: {user} has not responded in {timeout_limit}s.")
+                    self.log(f" Heartbeat Timeout: {user} has not responded in {timeout_limit}s.")
                     
                     # Tìm socket để đóng (nếu còn)
                     conn = self.clients.get(user)
@@ -545,7 +538,6 @@ class ServerGUI:
                         self.send_to_client(conn, {"action": "chat_message", "from": "Server", "message": "Người chơi không còn trực tuyến."})
                         self.send_to_client(conn, {"action": "challenge_declined", "opponent": opponent_name})
                     
-                # ... bên trong hàm handle_client ...
                 
                 elif action == "challenge_response":
                     opponent_name = message.get("opponent")
@@ -600,7 +592,6 @@ class ServerGUI:
                         decline_msg = {"action": "challenge_declined", "opponent": username}
                         self.send_to_client(opponent_conn, decline_msg)
 
-                # ... bên trong hàm handle_client ...
 
                 elif action == "move":
                     game_id = message.get("game_id")
@@ -666,7 +657,7 @@ class ServerGUI:
             self.log(f"Unexpected error with {addr}: {e}")
         
         finally:
-            # --- PHẦN QUAN TRỌNG NHẤT: DỌN DẸP KHI NGẮT KẾT NỐI ---
+            # --- DỌN DẸP KHI NGẮT KẾT NỐI ---
             self.log(f"Cleaning up connection for {username} ({addr})")
             
             if username:
